@@ -1,0 +1,310 @@
+/* YMERA Platform Integration System Styles */
+
+:root {
+    --primary-color: #0066cc;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --warning-color: #ffc107;
+    --danger-color: #dc3545;
+    --info-color: #17a2b8;
+    --light-gray: #f8f9fa;
+    --dark-gray: #343a40;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--light-gray);
+}
+
+/* Header Styles */
+.ymera-logo svg {
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+
+.status-indicator {
+    font-size: 1.2rem;
+    animation: pulse 2s infinite;
+}
+
+.status-indicator.ready { color: #28a745; }
+.status-indicator.running { color: #ffc107; }
+.status-indicator.error { color: #dc3545; }
+.status-indicator.completed { color: #28a745; }
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Card Styles */
+.card {
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    transition: box-shadow 0.3s ease;
+}
+
+.card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.card-header {
+    background-color: white;
+    border-bottom: 1px solid #e9ecef;
+    font-weight: 600;
+}
+
+/* Button Styles */
+.btn {
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--primary-color), #0052a3);
+    border: none;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, #0052a3, var(--primary-color));
+    transform: translateY(-1px);
+}
+
+.btn-success {
+    background: linear-gradient(135deg, var(--success-color), #1e7e34);
+    border: none;
+}
+
+.btn-success:hover {
+    background: linear-gradient(135deg, #1e7e34, var(--success-color));
+    transform: translateY(-1px);
+}
+
+/* Progress Styles */
+.progress {
+    height: 8px;
+    border-radius: 4px;
+    background-color: #e9ecef;
+}
+
+.progress-bar {
+    background: linear-gradient(90deg, var(--primary-color), var(--info-color));
+    border-radius: 4px;
+    transition: width 0.6s ease;
+}
+
+/* Status Badge Styles */
+.badge {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.badge.bg-success { background-color: var(--success-color) !important; }
+.badge.bg-danger { background-color: var(--danger-color) !important; }
+.badge.bg-warning { background-color: var(--warning-color) !important; }
+.badge.bg-info { background-color: var(--info-color) !important; }
+.badge.bg-secondary { background-color: var(--secondary-color) !important; }
+
+/* Log Container Styles */
+.log-container {
+    height: 400px;
+    overflow-y: auto;
+    background-color: #1e1e1e;
+    color: #ffffff;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    padding: 1rem;
+    border-radius: 0 0 8px 8px;
+}
+
+.log-entry {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    word-wrap: break-word;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-timestamp {
+    color: #888;
+    font-size: 0.8rem;
+    margin-right: 8px;
+}
+
+.log-message {
+    color: #ffffff;
+}
+
+.log-entry.error .log-message {
+    color: #ff6b6b;
+}
+
+.log-entry.warning .log-message {
+    color: #ffd93d;
+}
+
+.log-entry.success .log-message {
+    color: #51cf66;
+}
+
+.log-entry.info .log-message {
+    color: #74c0fc;
+}
+
+/* Validation Results Styles */
+.validation-item {
+    padding: 8px 12px;
+    margin: 4px 0;
+    border-radius: 6px;
+    background-color: #f8f9fa;
+    border-left: 4px solid #e9ecef;
+    transition: all 0.3s ease;
+}
+
+.validation-item.success {
+    background-color: #d4edda;
+    border-left-color: var(--success-color);
+    color: #155724;
+}
+
+.validation-item.error {
+    background-color: #f8d7da;
+    border-left-color: var(--danger-color);
+    color: #721c24;
+}
+
+.validation-item.warning {
+    background-color: #fff3cd;
+    border-left-color: var(--warning-color);
+    color: #856404;
+}
+
+.validation-item.info {
+    background-color: #d1ecf1;
+    border-left-color: var(--info-color);
+    color: #0c5460;
+}
+
+/* Animation Styles */
+.fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from { transform: translateX(-10px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* Responsive Styles */
+@media (max-width: 768px) {
+    .container-fluid {
+        padding: 0.5rem;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+    
+    .log-container {
+        height: 300px;
+        font-size: 0.8rem;
+    }
+    
+    .btn {
+        font-size: 0.875rem;
+    }
+}
+
+/* Scrollbar Styles */
+.log-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.log-container::-webkit-scrollbar-track {
+    background: #2d2d2d;
+}
+
+.log-container::-webkit-scrollbar-thumb {
+    background: #555;
+    border-radius: 4px;
+}
+
+.log-container::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+
+/* Loading Spinner */
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Phase Details */
+#phaseDetails {
+    font-style: italic;
+    line-height: 1.4;
+}
+
+/* Status Indicators */
+.component-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.component-status.success {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.component-status.error {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.component-status.pending {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+/* Utility Classes */
+.text-gradient {
+    background: linear-gradient(135deg, var(--primary-color), var(--info-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.shadow-sm {
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+}
+
+.shadow-md {
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+}
+
+.transition-all {
+    transition: all 0.3s ease;
+}
