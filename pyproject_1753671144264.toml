@@ -1,0 +1,2137 @@
+"""
+YMERA Enterprise Multi-Agent System
+Production-Ready FastAPI Application with AI Learning Engine
+Version 2.1.0 - Enterprise Production Grade
+"""
+
+from fastapi import FastAPI, Depends, HTTPException, status, BackgroundTasks, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
+from typing import Any, Dict, List, Optional, Union
+import logging
+import os
+import asyncio
+import json
+import time
+import uuid
+import hashlib
+from datetime import datetime, timedelta
+from pathlib import Path
+import signal
+import sys
+import traceback
+from dataclasses import dataclass, asdict
+from enum import Enum
+import threading
+import queue
+from concurrent.futures import ThreadPoolExecutor
+import aiofiles
+import aioredis
+import asyncpg
+import httpx
+from pydantic import BaseModel, Field, validator
+from sqlalchemy import create_engine, MetaData, Table, Column, String, DateTime, JSON, Boolean, Integer, Text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
+import jwt
+from passlib.context import CryptContext
+import bcrypt
+import redis
+from openai import AsyncOpenAI
+import anthropic
+import google.generativeai as genai
+import tiktoken
+import numpy as np
+from sentence_transformers import SentenceTransformer
+import pinecone
+from github import Github
+import docker
+import psutil
+import yaml
+from prometheus_client import Counter, Histogram, Gauge, generate_latest
+import structlog
+
+# Configure structured logging
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.JSONRenderer()
+    ],
+    context_class=dict,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    wrapper_class=structlog.stdlib.BoundLogger,
+    cache_logger_on_first_use=True,
+)
+
+logger = structlog.get_logger()
+
+# Prometheus metrics
+REQUEST_COUNT = Counter('ymera_requests_total', 'Total requests', ['method', 'endpoint', 'status'])
+REQUEST_LATENCY = Histogram('ymera_request_duration_seconds', 'Request latency')
+ACTIVE_AGENTS = Gauge('ymera_active_agents', 'Number of active agents')
+LEARNING_OPERATIONS = Counter('ymera_learning_operations_total', 'Learning operations')
+ERROR_COUNT = Counter('ymera_errors_total', 'Total errors', ['error_type'])
+
+# Configuration Management
+class Environment(str, Enum):
+    DEVELOPMENT = "development"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+@dataclass
+class DatabaseConfig:
+    url: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/ymera")
+    pool_size: int = int(os.getenv("DB_POOL_SIZE", "10"))
+    max_overflow: int = int(os.getenv("DB_MAX_OVERFLOW", "20"))
+    echo: bool = os.getenv("DB_ECHO", "false").lower() == "true"
+
+@dataclass
+class RedisConfig:
+    url: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    max_connections: int = int(os.getenv("REDIS_MAX_CONNECTIONS", "100"))
+    decode_responses: bool = True
+
+@dataclass
+class AIConfig:
+    openai_api_key: str = os.getenv("OPENAI_API_KEY", "")
+    anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
+    google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
+    groq_api_key: str = os.getenv("GROQ_API_KEY", "")
+    deepseek_api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
+    default_provider: str = os.getenv("DEFAULT_LLM_PROVIDER", "openai")
+    embedding_model: str = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+    max_tokens: int = int(os.getenv("MAX_TOKENS", "4096"))
+    temperature: float = float(os.getenv("AI_TEMPERATURE", "0.7"))
+
+@dataclass
+class SecurityConfig:
+    secret_key: str = os.getenv("SECRET_KEY", hashlib.sha256(os.urandom(32)).hexdigest())
+    algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")
+    access_token_expire_minutes: int = int(os.getenv("ACCESS_TOKEN_EXPIRE", "30"))
+    refresh_token_expire_days: int = int(os.getenv("REFRESH_TOKEN_EXPIRE", "7"))
+    allowed_hosts: List[str] = os.getenv("ALLOWED_HOSTS", "*").split(",")
+
+@dataclass
+class SystemConfig:
+    environment: Environment = Environment(os.getenv("ENVIRONMENT", "development"))
+    debug: bool = os.getenv("DEBUG", "false").lower() == "true"
+    log_level: str = os.getenv("LOG_LEVEL", "INFO")
+    workers: int = int(os.getenv("WORKERS", "1"))
+    host: str = os.getenv("HOST", "0.0.0.0")
+    port: int = int(os.getenv("PORT", "8000"))
+    github_token: str = os.getenv("GITHUB_TOKEN", "")
+    pinecone_api_key: str = os.getenv("PINECONE_API_KEY", "")
+    pinecone_environment: str = os.getenv("PINECONE_ENVIRONMENT", "")
+    pinecone_index_name: str = os.getenv("PINECONE_INDEX", "ymera-knowledge")
+
+class ConfigManager:
+    def __init__(self):
+        self.db = DatabaseConfig()
+        self.redis = RedisConfig()
+        self.ai = AIConfig()
+        self.security = SecurityConfig()
+        self.system = SystemConfig()
+        self._validate_config()
+    
+    def _validate_config(self):
+        """Validate critical configuration parameters"""
+        required_vars = []
+        
+        if self.system.environment == Environment.PRODUCTION:
+            if not self.ai.openai_api_key:
+                required_vars.append("OPENAI_API_KEY")
+            if not self.system.github_token:
+                required_vars.append("GITHUB_TOKEN")
+            if not self.system.pinecone_api_key:
+                required_vars.append("PINECONE_API_KEY")
+        
+        if required_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(required_vars)}")
+
+# Database Models and Manager
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    username = Column(String(50), unique=True, nullable=False)
+    email = Column(String(100), unique=True, nullable=False)
+    hashed_password = Column(String(128), nullable=False)
+    is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Project(Base):
+    __tablename__ = "projects"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(200), nullable=False)
+    description = Column(Text)
+    repository_url = Column(String(500))
+    status = Column(String(50), default="active")
+    owner_id = Column(String, nullable=False)
+    metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Agent(Base):
+    __tablename__ = "agents"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(100), nullable=False)
+    type = Column(String(50), nullable=False)
+    status = Column(String(20), default="inactive")
+    configuration = Column(JSON, default=dict)
+    performance_metrics = Column(JSON, default=dict)
+    learning_data = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class LearningRecord(Base):
+    __tablename__ = "learning_records"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    agent_id = Column(String, nullable=False)
+    interaction_type = Column(String(50), nullable=False)
+    input_data = Column(JSON, nullable=False)
+    output_data = Column(JSON, nullable=False)
+    feedback_score = Column(Integer)
+    success = Column(Boolean, default=True)
+    execution_time = Column(Integer)  # milliseconds
+    metadata = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class DatabaseManager:
+    def __init__(self, config: DatabaseConfig):
+        self.config = config
+        self.engine = None
+        self.session_factory = None
+        
+    async def initialize(self):
+        """Initialize database connection and create tables"""
+        self.engine = create_async_engine(
+            self.config.url,
+            pool_size=self.config.pool_size,
+            max_overflow=self.config.max_overflow,
+            echo=self.config.echo
+        )
+        
+        self.session_factory = async_sessionmaker(
+            bind=self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False
+        )
+        
+        # Create tables
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        
+        logger.info("Database initialized successfully")
+    
+    async def get_session(self) -> AsyncSession:
+        """Get database session"""
+        return self.session_factory()
+    
+    async def close(self):
+        """Close database connections"""
+        if self.engine:
+            await self.engine.dispose()
+
+# Authentication and Security
+class AuthManager:
+    def __init__(self, security_config: SecurityConfig):
+        self.security_config = security_config
+        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+    
+    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        return self.pwd_context.verify(plain_password, hashed_password)
+    
+    def get_password_hash(self, password: str) -> str:
+        return self.pwd_context.hash(password)
+    
+    def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None):
+        to_encode = data.copy()
+        if expires_delta:
+            expire = datetime.utcnow() + expires_delta
+        else:
+            expire = datetime.utcnow() + timedelta(minutes=self.security_config.access_token_expire_minutes)
+        
+        to_encode.update({"exp": expire})
+        return jwt.encode(to_encode, self.security_config.secret_key, algorithm=self.security_config.algorithm)
+    
+    def verify_token(self, token: str) -> Optional[dict]:
+        try:
+            payload = jwt.decode(token, self.security_config.secret_key, algorithms=[self.security_config.algorithm])
+            return payload
+        except jwt.PyJWTError:
+            return None
+
+# Redis Cache Manager
+class RedisCacheManager:
+    def __init__(self, config: RedisConfig):
+        self.config = config
+        self.redis = None
+    
+    async def initialize(self):
+        """Initialize Redis connection"""
+        self.redis = aioredis.from_url(
+            self.config.url,
+            max_connections=self.config.max_connections,
+            decode_responses=self.config.decode_responses
+        )
+        await self.redis.ping()
+        logger.info("Redis cache manager initialized successfully")
+    
+    async def get(self, key: str) -> Optional[str]:
+        return await self.redis.get(key)
+    
+    async def set(self, key: str, value: str, ttl: int = 3600):
+        await self.redis.setex(key, ttl, value)
+    
+    async def delete(self, key: str):
+        await self.redis.delete(key)
+    
+    async def exists(self, key: str) -> bool:
+        return await self.redis.exists(key)
+    
+    async def close(self):
+        if self.redis:
+            await self.redis.close()
+
+# Multi-LLM Manager
+class LLMProvider(str, Enum):
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    GOOGLE = "google"
+    GROQ = "groq"
+    DEEPSEEK = "deepseek"
+
+class MultiLLMManager:
+    def __init__(self, ai_config: AIConfig):
+        self.config = ai_config
+        self.clients = {}
+        self.tokenizers = {}
+        
+    async def initialize(self):
+        """Initialize LLM clients"""
+        if self.config.openai_api_key:
+            self.clients[LLMProvider.OPENAI] = AsyncOpenAI(api_key=self.config.openai_api_key)
+            self.tokenizers[LLMProvider.OPENAI] = tiktoken.get_encoding("cl100k_base")
+        
+        if self.config.anthropic_api_key:
+            self.clients[LLMProvider.ANTHROPIC] = anthropic.AsyncAnthropic(api_key=self.config.anthropic_api_key)
+        
+        if self.config.google_api_key:
+            genai.configure(api_key=self.config.google_api_key)
+        
+        logger.info(f"Initialized {len(self.clients)} LLM providers")
+    
+    async def generate_response(self, 
+                              prompt: str, 
+                              provider: LLMProvider = None,
+                              model: str = None,
+                              max_tokens: int = None,
+                              temperature: float = None) -> Dict[str, Any]:
+        """Generate response from specified LLM provider"""
+        provider = provider or LLMProvider(self.config.default_provider)
+        max_tokens = max_tokens or self.config.max_tokens
+        temperature = temperature or self.config.temperature
+        
+        try:
+            start_time = time.time()
+            
+            if provider == LLMProvider.OPENAI:
+                client = self.clients[LLMProvider.OPENAI]
+                response = await client.chat.completions.create(
+                    model=model or "gpt-4-turbo-preview",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+                content = response.choices[0].message.content
+                usage = {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens
+                }
+            
+            elif provider == LLMProvider.ANTHROPIC:
+                client = self.clients[LLMProvider.ANTHROPIC]
+                response = await client.messages.create(
+                    model=model or "claude-3-sonnet-20240229",
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                content = response.content[0].text
+                usage = {
+                    "prompt_tokens": response.usage.input_tokens,
+                    "completion_tokens": response.usage.output_tokens,
+                    "total_tokens": response.usage.input_tokens + response.usage.output_tokens
+                }
+            
+            else:
+                raise ValueError(f"Provider {provider} not implemented")
+            
+            execution_time = int((time.time() - start_time) * 1000)
+            
+            return {
+                "content": content,
+                "provider": provider,
+                "model": model,
+                "usage": usage,
+                "execution_time_ms": execution_time,
+                "success": True
+            }
+        
+        except Exception as e:
+            ERROR_COUNT.labels(error_type="llm_generation").inc()
+            logger.error(f"LLM generation failed: {str(e)}", provider=provider, error=str(e))
+            return {
+                "content": None,
+                "provider": provider,
+                "error": str(e),
+                "success": False
+            }
+
+# Embedding Service
+class EmbeddingService:
+    def __init__(self, ai_config: AIConfig):
+        self.config = ai_config
+        self.model = None
+        self.openai_client = None
+    
+    async def initialize(self):
+        """Initialize embedding models"""
+        if self.config.openai_api_key:
+            self.openai_client = AsyncOpenAI(api_key=self.config.openai_api_key)
+        
+        # Load local model for fallback
+        self.model = SentenceTransformer(self.config.embedding_model)
+        logger.info("Embedding service initialized successfully")
+    
+    async def get_embedding(self, text: str, use_openai: bool = True) -> List[float]:
+        """Get text embedding"""
+        try:
+            if use_openai and self.openai_client:
+                response = await self.openai_client.embeddings.create(
+                    model="text-embedding-ada-002",
+                    input=text
+                )
+                return response.data[0].embedding
+            else:
+                # Use local model
+                embedding = self.model.encode([text])[0]
+                return embedding.tolist()
+        except Exception as e:
+            logger.error(f"Embedding generation failed: {str(e)}")
+            # Fallback to local model
+            embedding = self.model.encode([text])[0]
+            return embedding.tolist()
+
+# Vector Database Manager (Pinecone)
+class VectorDBManager:
+    def __init__(self, system_config: SystemConfig):
+        self.config = system_config
+        self.index = None
+    
+    async def initialize(self):
+        """Initialize Pinecone connection"""
+        if not self.config.pinecone_api_key:
+            logger.warning("Pinecone API key not provided, using in-memory vector storage")
+            self.vectors = {}  # Fallback to in-memory storage
+            return
+        
+        try:
+            pinecone.init(
+                api_key=self.config.pinecone_api_key,
+                environment=self.config.pinecone_environment
+            )
+            
+            # Create or connect to index
+            if self.config.pinecone_index_name not in pinecone.list_indexes():
+                pinecone.create_index(
+                    name=self.config.pinecone_index_name,
+                    dimension=384,  # all-MiniLM-L6-v2 dimension
+                    metric="cosine"
+                )
+            
+            self.index = pinecone.Index(self.config.pinecone_index_name)
+            logger.info("Vector database initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Pinecone: {str(e)}, using fallback")
+            self.vectors = {}
+    
+    async def upsert(self, vectors: List[Dict[str, Any]]):
+        """Upsert vectors to database"""
+        if self.index:
+            self.index.upsert(vectors=vectors)
+        else:
+            # Fallback to in-memory storage
+            for vector in vectors:
+                self.vectors[vector["id"]] = vector
+    
+    async def query(self, vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+        """Query similar vectors"""
+        if self.index:
+            results = self.index.query(vector=vector, top_k=top_k, include_metadata=True)
+            return [{"id": match.id, "score": match.score, "metadata": match.metadata} 
+                   for match in results.matches]
+        else:
+            # Simple cosine similarity for fallback
+            similarities = []
+            query_vector = np.array(vector)
+            
+            for vec_id, vec_data in self.vectors.items():
+                stored_vector = np.array(vec_data["values"])
+                similarity = np.dot(query_vector, stored_vector) / (
+                    np.linalg.norm(query_vector) * np.linalg.norm(stored_vector)
+                )
+                similarities.append({
+                    "id": vec_id,
+                    "score": float(similarity),
+                    "metadata": vec_data.get("metadata", {})
+                })
+            
+            similarities.sort(key=lambda x: x["score"], reverse=True)
+            return similarities[:top_k]
+
+# Agent Base Class
+class BaseAgent:
+    def __init__(self, agent_id: str, agent_type: str, config: dict = None):
+        self.id = agent_id
+        self.type = agent_type
+        self.config = config or {}
+        self.status = "inactive"
+        self.performance_metrics = {
+            "tasks_completed": 0,
+            "success_rate": 0.0,
+            "avg_execution_time": 0.0,
+            "learning_score": 0.0
+        }
+        self.learning_data = []
+        self.created_at = datetime.utcnow()
+        self.last_active = None
+    
+    async def initialize(self):
+        """Initialize agent"""
+        self.status = "active"
+        self.last_active = datetime.utcnow()
+        logger.info(f"Agent {self.id} ({self.type}) initialized")
+    
+    async def execute_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute a task"""
+        start_time = time.time()
+        self.last_active = datetime.utcnow()
+        
+        try:
+            result = await self._process_task(task)
+            
+            execution_time = int((time.time() - start_time) * 1000)
+            self.performance_metrics["tasks_completed"] += 1
+            self._update_metrics(execution_time, True)
+            
+            # Store learning data
+            learning_record = {
+                "task": task,
+                "result": result,
+                "execution_time": execution_time,
+                "success": True,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+            self.learning_data.append(learning_record)
+            
+            return {
+                "success": True,
+                "result": result,
+                "execution_time_ms": execution_time,
+                "agent_id": self.id
+            }
+        
+        except Exception as e:
+            execution_time = int((time.time() - start_time) * 1000)
+            self._update_metrics(execution_time, False)
+            
+            ERROR_COUNT.labels(error_type="agent_task").inc()
+            logger.error(f"Agent {self.id} task failed: {str(e)}", agent_id=self.id, error=str(e))
+            
+            return {
+                "success": False,
+                "error": str(e),
+                "execution_time_ms": execution_time,
+                "agent_id": self.id
+            }
+    
+    async def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Override this method in specific agents"""
+        raise NotImplementedError("Agents must implement _process_task method")
+    
+    def _update_metrics(self, execution_time: int, success: bool):
+        """Update performance metrics"""
+        total_tasks = self.performance_metrics["tasks_completed"]
+        current_avg = self.performance_metrics["avg_execution_time"]
+        
+        # Update average execution time
+        if total_tasks == 0:
+            self.performance_metrics["avg_execution_time"] = execution_time
+        else:
+            self.performance_metrics["avg_execution_time"] = (
+                (current_avg * (total_tasks - 1) + execution_time) / total_tasks
+            )
+        
+        # Update success rate
+        if success:
+            successful_tasks = self.performance_metrics["success_rate"] * (total_tasks - 1) + 1
+        else:
+            successful_tasks = self.performance_metrics["success_rate"] * (total_tasks - 1)
+        
+        self.performance_metrics["success_rate"] = successful_tasks / total_tasks
+    
+    async def get_status(self) -> Dict[str, Any]:
+        """Get agent status"""
+        return {
+            "id": self.id,
+            "type": self.type,
+            "status": self.status,
+            "performance_metrics": self.performance_metrics,
+            "last_active": self.last_active.isoformat() if self.last_active else None,
+            "created_at": self.created_at.isoformat(),
+            "learning_records_count": len(self.learning_data)
+        }
+    
+    async def shutdown(self):
+        """Shutdown agent"""
+        self.status = "inactive"
+        logger.info(f"Agent {self.id} ({self.type}) shutdown")
+
+# Specific Agent Implementations
+class AnalysisAgent(BaseAgent):
+    def __init__(self, llm_manager: MultiLLMManager, **kwargs):
+        super().__init__(agent_id=kwargs.get("agent_id", "analysis_agent"), agent_type="analysis", config=kwargs.get("config", {}))
+        self.llm_manager = llm_manager
+    
+    async def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze code or repository"""
+        analysis_type = task.get("type", "code")
+        content = task.get("content", "")
+        
+        if analysis_type == "code":
+            prompt = f"""
+            Analyze the following code for quality, security, and potential improvements:
+            
+            {content}
+            
+            Provide analysis in JSON format with:
+            - quality_score (0-100)
+            - security_issues (list)
+            - suggestions (list)
+            - complexity_rating (low/medium/high)
+            """
+            
+            response = await self.llm_manager.generate_response(prompt)
+            
+            if response["success"]:
+                try:
+                    # Extract JSON from response
+                    content = response["content"]
+                    if "```json" in content:
+                        json_str = content.split("```json")[1].split("```")[0].strip()
+                    else:
+                        json_str = content
+                    
+                    analysis_result = json.loads(json_str)
+                    return {
+                        "analysis_type": analysis_type,
+                        "analysis": analysis_result,
+                        "llm_usage": response["usage"]
+                    }
+                except json.JSONDecodeError:
+                    return {
+                        "analysis_type": analysis_type,
+                        "analysis": {"raw_response": content},
+                        "llm_usage": response["usage"]
+                    }
+            else:
+                raise Exception(f"LLM analysis failed: {response['error']}")
+
+class EnhancementAgent(BaseAgent):
+    def __init__(self, llm_manager: MultiLLMManager, **kwargs):
+        super().__init__(agent_id=kwargs.get("agent_id", "enhancement_agent"), agent_type="enhancement", config=kwargs.get("config", {}))
+        self.llm_manager = llm_manager
+    
+    async def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Enhance code based on analysis"""
+        code = task.get("code", "")
+        suggestions = task.get("suggestions", [])
+        
+        prompt = f"""
+        Enhance the following code based on these suggestions:
+        Suggestions: {suggestions}
+        
+        Code:
+        {code}
+        
+        Provide the enhanced code with explanations for changes made.
+        """
+        
+        response = await self.llm_manager.generate_response(prompt)
+        
+        if response["success"]:
+            return {
+                "enhanced_code": response["content"],
+                "llm_usage": response["usage"]
+            }
+        else:
+            raise Exception(f"Code enhancement failed: {response['error']}")
+
+class LearningAgent(BaseAgent):
+    def __init__(self, llm_manager: MultiLLMManager, **kwargs):
+        super().__init__(agent_id=kwargs.get("agent_id", "learning_agent"), agent_type="learning", config=kwargs.get("config", {}))
+        self.llm_manager = llm_manager
+        self.knowledge_base = {}
+    
+    async def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Process learning from interactions"""
+        interaction_data = task.get("interaction_data", {})
+        feedback = task.get("feedback", {})
+        
+        # Analyze the interaction for learning opportunities
+        prompt = f"""
+        Analyze this interaction for learning insights:
+        
+        Interaction: {json.dumps(interaction_data, indent=2)}
+        Feedback: {json.dumps(feedback, indent=2)}
+        
+        Extract:
+        - Key patterns or insights
+        - Areas for improvement
+        - Knowledge to remember for future tasks
+        
+        Respond in JSON format.
+        """
+        
+        response = await self.llm_manager.generate_response(prompt)
+        
+        if response["success"]:
+            try:
+                insights = json.loads(response["content"].replace("```json", "").replace("```", "").strip())
+                
+                # Store insights in knowledge base
+                knowledge_key = f"interaction_{datetime.utcnow().timestamp()}"
+                self.knowledge_base[knowledge_key] = {
+                    "insights": insights,
+                    "original_interaction": interaction_data,
+                    "feedback": feedback,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+                
+                LEARNING_OPERATIONS.inc()
+                
+                return {
+                    "learning_insights": insights,
+                    "knowledge_entries": len(self.knowledge_base),
+                    "llm_usage": response["usage"]
+                }
+            except json.JSONDecodeError:
+                return {
+                    "learning_insights": {"raw_analysis": response["content"]},
+                    "knowledge_entries": len(self.knowledge_base)
+                }
+        else:
+            raise Exception(f"Learning analysis failed: {response['error']}")
+
+class SecurityAgent(BaseAgent):
+    def __init__(self, llm_manager: MultiLLMManager, **kwargs):
+        super().__init__(agent_id=kwargs.get class SecurityAgent(BaseAgent):
+    def __init__(self, llm_manager: MultiLLMManager, **kwargs):
+        super().__init__(agent_id=kwargs.get("agent_id", "security_agent"), agent_type="security", config=kwargs.get("config", {}))
+        self.llm_manager = llm_manager
+        self.security_patterns = {
+            "sql_injection": [r"(?i)(\bSELECT\b.*\bFROM\b.*\bWHERE\b.*['\"].*['\"])", r"(?i)\bunion\s+select\b"],
+            "xss": [r"<script.*?>.*?</script>", r"javascript:", r"on\w+\s*="],
+            "command_injection": [r"(?i);.*\b(rm|del|format|shutdown)\b", r"\|.*\b(cat|type|more)\b"],
+            "path_traversal": [r"\.\.[\\/]", r"(?i)\b(etc[\\/]passwd|windows[\\/]system32)\b"]
+        }
+    
+    async def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform security analysis on code or input"""
+        analysis_type = task.get("type", "code_security")
+        content = task.get("content", "")
+        
+        # Pattern-based security scan
+        security_issues = []
+        for vulnerability_type, patterns in self.security_patterns.items():
+            for pattern in patterns:
+                import re
+                if re.search(pattern, content):
+                    security_issues.append({
+                        "type": vulnerability_type,
+                        "pattern": pattern,
+                        "severity": "high" if vulnerability_type in ["sql_injection", "command_injection"] else "medium"
+                    })
+        
+        # LLM-based security analysis
+        prompt = f"""
+        Perform a comprehensive security analysis of the following code/content:
+        
+        {content}
+        
+        Check for:
+        - Authentication and authorization issues
+        - Input validation problems
+        - Cryptographic weaknesses
+        - Information disclosure risks
+        - Business logic flaws
+        - Configuration security issues
+        
+        Provide analysis in JSON format with:
+        - vulnerabilities (array of objects with type, description, severity, recommendation)
+        - security_score (0-100, higher is better)
+        - compliance_notes (array of compliance considerations)
+        """
+        
+        response = await self.llm_manager.generate_response(prompt)
+        
+        if response["success"]:
+            try:
+                llm_analysis = json.loads(response["content"].replace("```json", "").replace("```", "").strip())
+                
+                return {
+                    "pattern_based_issues": security_issues,
+                    "llm_analysis": llm_analysis,
+                    "total_issues": len(security_issues) + len(llm_analysis.get("vulnerabilities", [])),
+                    "llm_usage": response["usage"]
+                }
+            except json.JSONDecodeError:
+                return {
+                    "pattern_based_issues": security_issues,
+                    "llm_analysis": {"raw_response": response["content"]},
+                    "total_issues": len(security_issues),
+                    "llm_usage": response["usage"]
+                }
+        else:
+            raise Exception(f"Security analysis failed: {response['error']}")
+
+class CodeGenerationAgent(BaseAgent):
+    def __init__(self, llm_manager: MultiLLMManager, **kwargs):
+        super().__init__(agent_id=kwargs.get("agent_id", "codegen_agent"), agent_type="code_generation", config=kwargs.get("config", {}))
+        self.llm_manager = llm_manager
+    
+    async def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate code based on requirements"""
+        requirements = task.get("requirements", "")
+        language = task.get("language", "python")
+        framework = task.get("framework", "")
+        style_guide = task.get("style_guide", "")
+        
+        prompt = f"""
+        Generate {language} code based on these requirements:
+        
+        Requirements: {requirements}
+        Framework: {framework if framework else "standard library"}
+        Style Guide: {style_guide if style_guide else "follow language best practices"}
+        
+        Provide:
+        1. Complete, production-ready code
+        2. Proper error handling
+        3. Documentation/comments
+        4. Unit tests (if applicable)
+        5. Brief explanation of the implementation
+        
+        Format the response with clear code blocks and explanations.
+        """
+        
+        response = await self.llm_manager.generate_response(prompt, max_tokens=4000)
+        
+        if response["success"]:
+            return {
+                "generated_code": response["content"],
+                "language": language,
+                "framework": framework,
+                "llm_usage": response["usage"]
+            }
+        else:
+            raise Exception(f"Code generation failed: {response['error']}")
+
+class TestingAgent(BaseAgent):
+    def __init__(self, llm_manager: MultiLLMManager, **kwargs):
+        super().__init__(agent_id=kwargs.get("agent_id", "testing_agent"), agent_type="testing", config=kwargs.get("config", {}))
+        self.llm_manager = llm_manager
+    
+    async def _process_task(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate comprehensive tests for given code"""
+        code = task.get("code", "")
+        test_types = task.get("test_types", ["unit", "integration"])
+        coverage_target = task.get("coverage_target", 90)
+        
+        prompt = f"""
+        Generate comprehensive tests for the following code:
+        
+        {code}
+        
+        Generate:
+        - {', '.join(test_types)} tests
+        - Target coverage: {coverage_target}%
+        - Edge cases and error conditions
+        - Performance tests (if applicable)
+        - Mock implementations where needed
+        
+        Provide tests in appropriate testing framework format with detailed assertions.
+        """
+        
+        response = await self.llm_manager.generate_response(prompt, max_tokens=4000)
+        
+        if response["success"]:
+            return {
+                "test_code": response["content"],
+                "test_types": test_types,
+                "coverage_target": coverage_target,
+                "llm_usage": response["usage"]
+            }
+        else:
+            raise Exception(f"Test generation failed: {response['error']}")
+
+# Agent Manager - Orchestrates all agents
+class AgentManager:
+    def __init__(self, llm_manager: MultiLLMManager, db_manager: DatabaseManager):
+        self.llm_manager = llm_manager
+        self.db_manager = db_manager
+        self.agents = {}
+        self.agent_classes = {
+            "analysis": AnalysisAgent,
+            "enhancement": EnhancementAgent,
+            "learning": LearningAgent,
+            "security": SecurityAgent,
+            "code_generation": CodeGenerationAgent,
+            "testing": TestingAgent
+        }
+        self.task_queue = asyncio.Queue()
+        self.workers_running = False
+    
+    async def initialize(self):
+        """Initialize agent manager and create default agents"""
+        # Create default agents
+        for agent_type, agent_class in self.agent_classes.items():
+            agent = agent_class(
+                llm_manager=self.llm_manager,
+                agent_id=f"{agent_type}_{uuid.uuid4().hex[:8]}",
+                config={}
+            )
+            await agent.initialize()
+            self.agents[agent.id] = agent
+            ACTIVE_AGENTS.inc()
+        
+        # Start task processing workers
+        self.workers_running = True
+        for i in range(3):  # 3 concurrent workers
+            asyncio.create_task(self._task_worker(f"worker_{i}"))
+        
+        logger.info(f"Agent manager initialized with {len(self.agents)} agents")
+    
+    async def _task_worker(self, worker_id: str):
+        """Background worker to process tasks"""
+        while self.workers_running:
+            try:
+                task_data = await asyncio.wait_for(self.task_queue.get(), timeout=1.0)
+                task_id = task_data["task_id"]
+                agent_id = task_data["agent_id"]
+                task = task_data["task"]
+                
+                if agent_id in self.agents:
+                    result = await self.agents[agent_id].execute_task(task)
+                    
+                    # Store learning record
+                    await self._store_learning_record(agent_id, task, result)
+                    
+                    logger.info(f"Task {task_id} completed by {agent_id}", 
+                               worker_id=worker_id, task_id=task_id, success=result["success"])
+                
+                self.task_queue.task_done()
+                
+            except asyncio.TimeoutError:
+                continue
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="task_worker").inc()
+                logger.error(f"Task worker error: {str(e)}", worker_id=worker_id, error=str(e))
+    
+    async def _store_learning_record(self, agent_id: str, task: Dict[str, Any], result: Dict[str, Any]):
+        """Store learning record in database"""
+        try:
+            async with self.db_manager.get_session() as session:
+                learning_record = LearningRecord(
+                    agent_id=agent_id,
+                    interaction_type=task.get("type", "unknown"),
+                    input_data=task,
+                    output_data=result,
+                    success=result.get("success", False),
+                    execution_time=result.get("execution_time_ms", 0),
+                    metadata={"worker_processed": True}
+                )
+                session.add(learning_record)
+                await session.commit()
+                
+        except Exception as e:
+            logger.error(f"Failed to store learning record: {str(e)}", agent_id=agent_id)
+    
+    async def create_agent(self, agent_type: str, config: dict = None) -> str:
+        """Create a new agent"""
+        if agent_type not in self.agent_classes:
+            raise ValueError(f"Unknown agent type: {agent_type}")
+        
+        agent_class = self.agent_classes[agent_type]
+        agent_id = f"{agent_type}_{uuid.uuid4().hex[:8]}"
+        
+        agent = agent_class(
+            llm_manager=self.llm_manager,
+            agent_id=agent_id,
+            config=config or {}
+        )
+        await agent.initialize()
+        
+        self.agents[agent_id] = agent
+        ACTIVE_AGENTS.inc()
+        
+        # Store in database
+        async with self.db_manager.get_session() as session:
+            db_agent = Agent(
+                id=agent_id,
+                name=agent_id,
+                type=agent_type,
+                status="active",
+                configuration=config or {},
+                performance_metrics=agent.performance_metrics
+            )
+            session.add(db_agent)
+            await session.commit()
+        
+        logger.info(f"Created new agent: {agent_id} ({agent_type})")
+        return agent_id
+    
+    async def submit_task(self, agent_id: str, task: Dict[str, Any]) -> str:
+        """Submit task to agent queue"""
+        if agent_id not in self.agents:
+            raise ValueError(f"Agent {agent_id} not found")
+        
+        task_id = str(uuid.uuid4())
+        await self.task_queue.put({
+            "task_id": task_id,
+            "agent_id": agent_id,
+            "task": task
+        })
+        
+        return task_id
+    
+    async def execute_task_sync(self, agent_id: str, task: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute task synchronously"""
+        if agent_id not in self.agents:
+            raise ValueError(f"Agent {agent_id} not found")
+        
+        result = await self.agents[agent_id].execute_task(task)
+        await self._store_learning_record(agent_id, task, result)
+        return result
+    
+    async def get_agent_status(self, agent_id: str) -> Dict[str, Any]:
+        """Get agent status"""
+        if agent_id not in self.agents:
+            raise ValueError(f"Agent {agent_id} not found")
+        
+        return await self.agents[agent_id].get_status()
+    
+    async def list_agents(self) -> List[Dict[str, Any]]:
+        """List all agents"""
+        agents_status = []
+        for agent in self.agents.values():
+            status = await agent.get_status()
+            agents_status.append(status)
+        return agents_status
+    
+    async def shutdown(self):
+        """Shutdown all agents and workers"""
+        self.workers_running = False
+        
+        for agent in self.agents.values():
+            await agent.shutdown()
+            ACTIVE_AGENTS.dec()
+        
+        logger.info("Agent manager shutdown complete")
+
+# GitHub Integration Service
+class GitHubService:
+    def __init__(self, github_token: str):
+        self.github = Github(github_token) if github_token else None
+        self.client = httpx.AsyncClient() if not github_token else None
+    
+    async def get_repository_info(self, repo_url: str) -> Dict[str, Any]:
+        """Get repository information"""
+        try:
+            if self.github:
+                # Extract owner/repo from URL
+                parts = repo_url.replace("https://github.com/", "").split("/")
+                if len(parts) >= 2:
+                    owner, repo_name = parts[0], parts[1]
+                    repo = self.github.get_repo(f"{owner}/{repo_name}")
+                    
+                    return {
+                        "name": repo.name,
+                        "full_name": repo.full_name,
+                        "description": repo.description,
+                        "language": repo.language,
+                        "stars": repo.stargazers_count,
+                        "forks": repo.forks_count,
+                        "issues": repo.open_issues_count,
+                        "created_at": repo.created_at.isoformat(),
+                        "updated_at": repo.updated_at.isoformat(),
+                        "default_branch": repo.default_branch
+                    }
+            
+            # Fallback to GitHub API without authentication
+            parts = repo_url.replace("https://github.com/", "").split("/")
+            if len(parts) >= 2:
+                owner, repo_name = parts[0], parts[1]
+                url = f"https://api.github.com/repos/{owner}/{repo_name}"
+                
+                async with self.client.get(url) as response:
+                    if response.status_code == 200:
+                        data = response.json()
+                        return {
+                            "name": data["name"],
+                            "full_name": data["full_name"],
+                            "description": data["description"],
+                            "language": data["language"],
+                            "stars": data["stargazers_count"],
+                            "forks": data["forks_count"],
+                            "issues": data["open_issues_count"],
+                            "created_at": data["created_at"],
+                            "updated_at": data["updated_at"],
+                            "default_branch": data["default_branch"]
+                        }
+            
+            raise ValueError("Invalid repository URL or access denied")
+            
+        except Exception as e:
+            logger.error(f"Failed to get repository info: {str(e)}")
+            return {"error": str(e)}
+    
+    async def get_file_content(self, repo_url: str, file_path: str, branch: str = "main") -> str:
+        """Get file content from repository"""
+        try:
+            if self.github:
+                parts = repo_url.replace("https://github.com/", "").split("/")
+                if len(parts) >= 2:
+                    owner, repo_name = parts[0], parts[1]
+                    repo = self.github.get_repo(f"{owner}/{repo_name}")
+                    file_content = repo.get_contents(file_path, ref=branch)
+                    return file_content.decoded_content.decode('utf-8')
+            
+            # Fallback to raw GitHub content
+            parts = repo_url.replace("https://github.com/", "").split("/")
+            if len(parts) >= 2:
+                owner, repo_name = parts[0], parts[1]
+                url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{file_path}"
+                
+                async with self.client.get(url) as response:
+                    if response.status_code == 200:
+                        return response.text
+            
+            raise ValueError("File not found or access denied")
+            
+        except Exception as e:
+            logger.error(f"Failed to get file content: {str(e)}")
+            raise
+
+# Project Service
+class ProjectService:
+    def __init__(self, db_manager: DatabaseManager, github_service: GitHubService, agent_manager: AgentManager):
+        self.db_manager = db_manager
+        self.github_service = github_service
+        self.agent_manager = agent_manager
+    
+    async def create_project(self, project_data: Dict[str, Any], user_id: str) -> str:
+        """Create a new project"""
+        project_id = str(uuid.uuid4())
+        
+        async with self.db_manager.get_session() as session:
+            project = Project(
+                id=project_id,
+                name=project_data["name"],
+                description=project_data.get("description", ""),
+                repository_url=project_data.get("repository_url", ""),
+                owner_id=user_id,
+                metadata=project_data.get("metadata", {})
+            )
+            session.add(project)
+            await session.commit()
+        
+        logger.info(f"Created project: {project_id}", project_id=project_id, user_id=user_id)
+        return project_id
+    
+    async def analyze_project(self, project_id: str) -> Dict[str, Any]:
+        """Analyze project repository"""
+        async with self.db_manager.get_session() as session:
+            from sqlalchemy import select
+            result = await session.execute(select(Project).where(Project.id == project_id))
+            project = result.scalar_one_or_none()
+            
+            if not project:
+                raise ValueError(f"Project {project_id} not found")
+            
+            if not project.repository_url:
+                raise ValueError("Project has no repository URL")
+        
+        # Get repository information
+        repo_info = await self.github_service.get_repository_info(project.repository_url)
+        
+        if "error" in repo_info:
+            return {"error": "Failed to access repository", "details": repo_info["error"]}
+        
+        # Analyze key files
+        analysis_results = {}
+        key_files = ["README.md", "requirements.txt", "package.json", "Dockerfile", "main.py", "app.py", "index.js"]
+        
+        for file_path in key_files:
+            try:
+                content = await self.github_service.get_file_content(
+                    project.repository_url, 
+                    file_path, 
+                    repo_info.get("default_branch", "main")
+                )
+                
+                # Find appropriate agent for analysis
+                analysis_agent_id = None
+                for agent_id, agent in self.agent_manager.agents.items():
+                    if agent.type == "analysis":
+                        analysis_agent_id = agent_id
+                        break
+                
+                if analysis_agent_id:
+                    result = await self.agent_manager.execute_task_sync(
+                        analysis_agent_id,
+                        {"type": "code", "content": content, "file_path": file_path}
+                    )
+                    analysis_results[file_path] = result
+                
+            except Exception as e:
+                logger.debug(f"Could not analyze file {file_path}: {str(e)}")
+                continue
+        
+        # Security analysis
+        security_agent_id = None
+        for agent_id, agent in self.agent_manager.agents.items():
+            if agent.type == "security":
+                security_agent_id = agent_id
+                break
+        
+        security_results = {}
+        if security_agent_id:
+            for file_path, analysis in analysis_results.items():
+                if analysis.get("success"):
+                    try:
+                        content = await self.github_service.get_file_content(
+                            project.repository_url, 
+                            file_path, 
+                            repo_info.get("default_branch", "main")
+                        )
+                        
+                        security_result = await self.agent_manager.execute_task_sync(
+                            security_agent_id,
+                            {"type": "code_security", "content": content}
+                        )
+                        security_results[file_path] = security_result
+                        
+                    except Exception as e:
+                        logger.debug(f"Security analysis failed for {file_path}: {str(e)}")
+        
+        return {
+            "project_id": project_id,
+            "repository_info": repo_info,
+            "code_analysis": analysis_results,
+            "security_analysis": security_results,
+            "analyzed_files": list(analysis_results.keys()),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+# Pydantic Models for API
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+class UserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: str = Field(..., regex=r'^[^@]+@[^@]+\.[^@]+$')
+    password: str = Field(..., min_length=8)
+
+class UserLogin(BaseModel):
+    username: str
+    password: str
+
+class ProjectCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = None
+    repository_url: Optional[str] = Field(None, regex=r'^https://github\.com/[\w\-\.]+/[\w\-\.]+/?$')
+    metadata: Optional[Dict[str, Any]] = {}
+
+class TaskSubmit(BaseModel):
+    agent_type: str = Field(..., regex=r'^(analysis|enhancement|learning|security|code_generation|testing)$')
+    task_data: Dict[str, Any]
+    sync: bool = False
+
+class AgentCreate(BaseModel):
+    type: str = Field(..., regex=r'^(analysis|enhancement|learning|security|code_generation|testing)$')
+    config: Optional[Dict[str, Any]] = {}
+
+# Main Application Class
+class YMERAApplication:
+    def __init__(self):
+        self.config = ConfigManager()
+        self.app = FastAPI(
+            title="YMERA Enterprise Multi-Agent System",
+            description="Production-ready AI agent system for code analysis and enhancement",
+            version="2.1.0",
+            docs_url="/docs" if self.config.system.debug else None,
+            redoc_url="/redoc" if self.config.system.debug else None
+        )
+        
+        # Core components
+        self.db_manager = DatabaseManager(self.config.db)
+        self.redis_manager = RedisCacheManager(self.config.redis)
+        self.llm_manager = MultiLLMManager(self.config.ai)
+        self.embedding_service = EmbeddingService(self.config.ai)
+        self.vector_db_manager = VectorDBManager(self.config.system)
+        self.auth_manager = AuthManager(self.config.security)
+        self.github_service = GitHubService(self.config.system.github_token)
+        self.agent_manager = None
+        self.project_service = None
+        
+        # Security
+        self.security = HTTPBearer()
+        
+        # Setup middleware and routes
+        self._setup_middleware()
+        self._setup_routes()
+        self._setup_error_handlers()
+    
+    def _setup_middleware(self):
+        """Setup CORS and other middleware"""
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=self.config.security.allowed_hosts,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+        
+        @self.app.middleware("http")
+        async def request_logging_middleware(request: Request, call_next):
+            start_time = time.time()
+            
+            response = await call_next(request)
+            
+            process_time = time.time() - start_time
+            REQUEST_LATENCY.observe(process_time)
+            REQUEST_COUNT.labels(
+                method=request.method,
+                endpoint=request.url.path,
+                status=response.status_code
+            ).inc()
+            
+            logger.info(
+                "Request completed",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+                process_time=process_time
+            )
+            
+            return response
+    
+    async def _get_current_user(self, credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
+        """Get current authenticated user"""
+        try:
+            payload = self.auth_manager.verify_token(credentials.credentials)
+            if payload is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token"
+                )
+            
+            user_id = payload.get("sub")
+            if not user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token payload"
+                )
+            
+            async with self.db_manager.get_session() as session:
+                from sqlalchemy import select
+                result = await session.execute(select(User).where(User.id == user_id))
+                user = result.scalar_one_or_none()
+                
+                if not user or not user.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="User not found or inactive"
+                    )
+                
+                return user
+                
+        except Exception as e:
+            logger.error(f"Authentication failed: {str(e)}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication failed"
+            )
+    
+    def _setup_routes(self):
+        """Setup API routes"""
+        
+        @self.app.get("/")
+        async def root():
+            return {
+                "message": "YMERA Enterprise Multi-Agent System",
+                "version": "2.1.0",
+                "status": "operational",
+                "environment": self.config.system.environment.value
+            }
+        
+        @self.app.get("/health")
+        async def health_check():
+            """Health check endpoint"""
+            try:
+                # Check database
+                async with self.db_manager.get_session() as session:
+                    from sqlalchemy import text
+                    await session.execute(text("SELECT 1"))
+                
+                # Check Redis
+                await self.redis_manager.redis.ping()
+                
+                # Check agent manager
+                agents_count = len(self.agent_manager.agents) if self.agent_manager else 0
+                
+                return {
+                    "status": "healthy",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "components": {
+                        "database": "operational",
+                        "redis": "operational",
+                        "agents": f"{agents_count} active"
+                    }
+                }
+            except Exception as e:
+                logger.error(f"Health check failed: {str(e)}")
+                raise HTTPException(status_code=503, detail="Service unhealthy")
+        
+        @self.app.get("/metrics")
+        async def metrics():
+            """Prometheus metrics endpoint"""
+            return Response(generate_latest(), media_type="text/plain")
+        
+        # Authentication routes
+        @self.app.post("/auth/register", response_model=TokenResponse)
+        async def register(user_data: UserCreate):
+            """Register new user"""
+            try:
+                async with self.db_manager.get_session() as session:
+                    from sqlalchemy import select
+                    
+                    # Check if user exists
+                    result = await session.execute(
+                        select(User).where(
+                            (User.username == user_data.username) | 
+                            (User.email == user_data.email)
+                        )
+                    )
+                    existing_user = result.scalar_one_or_none()
+                    
+                    if existing_user:
+                        raise HTTPException(
+                            status_code=400,
+                            detail="Username or email already registered"
+                        )
+                    
+                    # Create new user
+                    user = User(
+                        username=user_data.username,
+                        email=user_data.email,
+                        hashed_password=self.auth_manager.get_password_hash(user_data.password)
+                    )
+                    session.add(user)
+                    await session.commit()
+                    await session.refresh(user)
+                    
+                    # Create access token
+                    access_token = self.auth_manager.create_access_token(
+                        data={"sub": user.id}
+                    )
+                    
+                    logger.info(f"User registered: {user.username}", user_id=user.id)
+                    
+                    return TokenResponse(
+                        access_token=access_token,
+                        expires_in=self.config.security.access_token_expire_minutes * 60
+                    )
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="registration").inc()
+                logger.error(f"Registration failed: {str(e)}")
+                raise HTTPException(status_code=500, detail="Registration failed")
+        
+        @self.app.post("/auth/login", response_model=TokenResponse)
+        async def login(credentials: UserLogin):
+            """Login user"""
+            try:
+                async with self.db_manager.get_session() as session:
+                    from sqlalchemy import select
+                    result = await session.execute(
+                        select(User).where(User.username == credentials.username)
+                    )
+                    user = result.scalar_one_or_none()
+                    
+                    if not user or not self.auth_manager.verify_password(
+                        credentials.password, user.hashed_password
+                    ):
+                        raise HTTPException(
+                            status_code=401,
+                            detail="Invalid credentials"
+                        )
+                    
+                    if not user.is_active:
+                        raise HTTPException(
+                            status_code=401,
+                            detail="Account deactivated"
+                        )
+                    
+                    # Create access token
+                    access_token = self.auth_manager.create_access_token(
+                        data={"sub": user.id}
+                    )
+                    
+                    logger.info(f"User logged in: {user.username}", user_id=user.id)
+                    
+                    return TokenResponse(
+                        access_token=access_token,
+                        expires_in=self.config.security.access_token_expire_minutes * 60
+                    )
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="login").inc()
+                logger.error(f"Login failed: {str(e)}")
+                raise HTTPException(status_code=500, detail raise HTTPException(status_code=500, detail="Login failed")
+        
+        # Project management routes
+        @self.app.post("/projects", response_model=dict)
+        async def create_project(
+            project_data: ProjectCreate,
+            current_user: User = Depends(self._get_current_user)
+        ):
+            """Create a new project"""
+            try:
+                project_id = await self.project_service.create_project(
+                    project_data.dict(), 
+                    current_user.id
+                )
+                
+                return {
+                    "project_id": project_id,
+                    "message": "Project created successfully"
+                }
+                
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="project_creation").inc()
+                logger.error(f"Project creation failed: {str(e)}", user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Project creation failed")
+        
+        @self.app.get("/projects/{project_id}/analyze")
+        async def analyze_project(
+            project_id: str,
+            current_user: User = Depends(self._get_current_user)
+        ):
+            """Analyze project repository"""
+            try:
+                # Verify project ownership
+                async with self.db_manager.get_session() as session:
+                    from sqlalchemy import select
+                    result = await session.execute(
+                        select(Project).where(
+                            (Project.id == project_id) & 
+                            (Project.owner_id == current_user.id)
+                        )
+                    )
+                    project = result.scalar_one_or_none()
+                    
+                    if not project:
+                        raise HTTPException(
+                            status_code=404,
+                            detail="Project not found or access denied"
+                        )
+                
+                analysis_result = await self.project_service.analyze_project(project_id)
+                return analysis_result
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="project_analysis").inc()
+                logger.error(f"Project analysis failed: {str(e)}", 
+                           project_id=project_id, user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Project analysis failed")
+        
+        @self.app.get("/projects")
+        async def list_projects(
+            current_user: User = Depends(self._get_current_user),
+            skip: int = Query(0, ge=0),
+            limit: int = Query(100, ge=1, le=1000)
+        ):
+            """List user's projects"""
+            try:
+                async with self.db_manager.get_session() as session:
+                    from sqlalchemy import select
+                    result = await session.execute(
+                        select(Project).where(Project.owner_id == current_user.id)
+                        .offset(skip).limit(limit)
+                        .order_by(Project.created_at.desc())
+                    )
+                    projects = result.scalars().all()
+                    
+                    return {
+                        "projects": [
+                            {
+                                "id": p.id,
+                                "name": p.name,
+                                "description": p.description,
+                                "repository_url": p.repository_url,
+                                "created_at": p.created_at.isoformat(),
+                                "updated_at": p.updated_at.isoformat()
+                            }
+                            for p in projects
+                        ],
+                        "total": len(projects),
+                        "skip": skip,
+                        "limit": limit
+                    }
+                    
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="project_listing").inc()
+                logger.error(f"Project listing failed: {str(e)}", user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Failed to list projects")
+        
+        # Agent management routes
+        @self.app.post("/agents", response_model=dict)
+        async def create_agent(
+            agent_data: AgentCreate,
+            current_user: User = Depends(self._get_current_user)
+        ):
+            """Create a new agent"""
+            try:
+                agent_id = await self.agent_manager.create_agent(
+                    agent_data.type, 
+                    agent_data.config
+                )
+                
+                return {
+                    "agent_id": agent_id,
+                    "type": agent_data.type,
+                    "message": "Agent created successfully"
+                }
+                
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="agent_creation").inc()
+                logger.error(f"Agent creation failed: {str(e)}", user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Agent creation failed")
+        
+        @self.app.get("/agents")
+        async def list_agents(
+            current_user: User = Depends(self._get_current_user)
+        ):
+            """List all agents"""
+            try:
+                agents = await self.agent_manager.list_agents()
+                return {"agents": agents, "total": len(agents)}
+                
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="agent_listing").inc()
+                logger.error(f"Agent listing failed: {str(e)}", user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Failed to list agents")
+        
+        @self.app.get("/agents/{agent_id}/status")
+        async def get_agent_status(
+            agent_id: str,
+            current_user: User = Depends(self._get_current_user)
+        ):
+            """Get agent status"""
+            try:
+                status = await self.agent_manager.get_agent_status(agent_id)
+                return status
+                
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="agent_status").inc()
+                logger.error(f"Agent status retrieval failed: {str(e)}", 
+                           agent_id=agent_id, user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Failed to get agent status")
+        
+        @self.app.post("/agents/{agent_id}/tasks")
+        async def submit_task(
+            agent_id: str,
+            task_data: TaskSubmit,
+            current_user: User = Depends(self._get_current_user)
+        ):
+            """Submit task to agent"""
+            try:
+                if task_data.sync:
+                    # Execute synchronously
+                    result = await self.agent_manager.execute_task_sync(
+                        agent_id, 
+                        task_data.task_data
+                    )
+                    return result
+                else:
+                    # Submit to queue
+                    task_id = await self.agent_manager.submit_task(
+                        agent_id, 
+                        task_data.task_data
+                    )
+                    return {
+                        "task_id": task_id,
+                        "message": "Task submitted to queue"
+                    }
+                    
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="task_submission").inc()
+                logger.error(f"Task submission failed: {str(e)}", 
+                           agent_id=agent_id, user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Task submission failed")
+        
+        # Analytics and insights routes
+        @self.app.get("/analytics/overview")
+        async def get_analytics_overview(
+            current_user: User = Depends(self._get_current_user)
+        ):
+            """Get analytics overview"""
+            try:
+                async with self.db_manager.get_session() as session:
+                    from sqlalchemy import select, func, and_
+                    
+                    # User's project count
+                    project_count_result = await session.execute(
+                        select(func.count(Project.id)).where(Project.owner_id == current_user.id)
+                    )
+                    project_count = project_count_result.scalar()
+                    
+                    # Recent learning records for user's projects
+                    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+                    learning_records_result = await session.execute(
+                        select(func.count(LearningRecord.id)).where(
+                            and_(
+                                LearningRecord.created_at >= thirty_days_ago,
+                                LearningRecord.agent_id.in_(
+                                    select(Agent.id).where(Agent.status == 'active')
+                                )
+                            )
+                        )
+                    )
+                    learning_records_count = learning_records_result.scalar()
+                    
+                    # Success rate calculation
+                    success_records_result = await session.execute(
+                        select(func.count(LearningRecord.id)).where(
+                            and_(
+                                LearningRecord.created_at >= thirty_days_ago,
+                                LearningRecord.success == True,
+                                LearningRecord.agent_id.in_(
+                                    select(Agent.id).where(Agent.status == 'active')
+                                )
+                            )
+                        )
+                    )
+                    success_records_count = success_records_result.scalar()
+                    
+                    success_rate = (success_records_count / learning_records_count * 100) if learning_records_count > 0 else 0
+                    
+                    return {
+                        "user_projects": project_count,
+                        "total_tasks_30_days": learning_records_count,
+                        "success_rate_30_days": round(success_rate, 2),
+                        "active_agents": len(self.agent_manager.agents),
+                        "period": "30 days"
+                    }
+                    
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="analytics").inc()
+                logger.error(f"Analytics overview failed: {str(e)}", user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Failed to generate analytics")
+        
+        @self.app.get("/analytics/performance")
+        async def get_performance_metrics(
+            current_user: User = Depends(self._get_current_user),
+            days: int = Query(30, ge=1, le=365)
+        ):
+            """Get detailed performance metrics"""
+            try:
+                async with self.db_manager.get_session() as session:
+                    from sqlalchemy import select, func, and_
+                    
+                    start_date = datetime.utcnow() - timedelta(days=days)
+                    
+                    # Performance by agent type
+                    agent_performance_result = await session.execute(
+                        select(
+                            Agent.type,
+                            func.count(LearningRecord.id).label('total_tasks'),
+                            func.count(
+                                case((LearningRecord.success == True, 1))
+                            ).label('successful_tasks'),
+                            func.avg(LearningRecord.execution_time).label('avg_execution_time')
+                        )
+                        .join(LearningRecord, Agent.id == LearningRecord.agent_id)
+                        .where(LearningRecord.created_at >= start_date)
+                        .group_by(Agent.type)
+                    )
+                    
+                    agent_performance = []
+                    for row in agent_performance_result:
+                        success_rate = (row.successful_tasks / row.total_tasks * 100) if row.total_tasks > 0 else 0
+                        agent_performance.append({
+                            "agent_type": row.type,
+                            "total_tasks": row.total_tasks,
+                            "successful_tasks": row.successful_tasks,
+                            "success_rate": round(success_rate, 2),
+                            "avg_execution_time_ms": round(row.avg_execution_time or 0, 2)
+                        })
+                    
+                    # Daily task volume
+                    daily_volume_result = await session.execute(
+                        select(
+                            func.date(LearningRecord.created_at).label('date'),
+                            func.count(LearningRecord.id).label('task_count')
+                        )
+                        .where(LearningRecord.created_at >= start_date)
+                        .group_by(func.date(LearningRecord.created_at))
+                        .order_by(func.date(LearningRecord.created_at))
+                    )
+                    
+                    daily_volume = [
+                        {
+                            "date": row.date.isoformat(),
+                            "task_count": row.task_count
+                        }
+                        for row in daily_volume_result
+                    ]
+                    
+                    return {
+                        "agent_performance": agent_performance,
+                        "daily_task_volume": daily_volume,
+                        "period_days": days
+                    }
+                    
+            except Exception as e:
+                ERROR_COUNT.labels(error_type="performance_metrics").inc()
+                logger.error(f"Performance metrics failed: {str(e)}", user_id=current_user.id)
+                raise HTTPException(status_code=500, detail="Failed to generate performance metrics")
+    
+    def _setup_error_handlers(self):
+        """Setup global error handlers"""
+        
+        @self.app.exception_handler(ValidationError)
+        async def validation_exception_handler(request: Request, exc: ValidationError):
+            ERROR_COUNT.labels(error_type="validation").inc()
+            return JSONResponse(
+                status_code=422,
+                content={"detail": "Validation error", "errors": exc.errors()}
+            )
+        
+        @self.app.exception_handler(HTTPException)
+        async def http_exception_handler(request: Request, exc: HTTPException):
+            ERROR_COUNT.labels(error_type="http").inc()
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"detail": exc.detail}
+            )
+        
+        @self.app.exception_handler(Exception)
+        async def general_exception_handler(request: Request, exc: Exception):
+            ERROR_COUNT.labels(error_type="general").inc()
+            logger.error(f"Unhandled exception: {str(exc)}", 
+                        path=request.url.path, method=request.method)
+            
+            if self.config.system.debug:
+                return JSONResponse(
+                    status_code=500,
+                    content={"detail": f"Internal server error: {str(exc)}"}
+                )
+            else:
+                return JSONResponse(
+                    status_code=500,
+                    content={"detail": "Internal server error"}
+                )
+    
+    async def startup(self):
+        """Initialize all services"""
+        try:
+            logger.info("Starting YMERA Enterprise Multi-Agent System...")
+            
+            # Initialize core components
+            await self.db_manager.initialize()
+            await self.redis_manager.initialize()
+            await self.llm_manager.initialize()
+            await self.embedding_service.initialize()
+            await self.vector_db_manager.initialize()
+            
+            # Initialize agent manager
+            self.agent_manager = AgentManager(self.llm_manager, self.db_manager)
+            await self.agent_manager.initialize()
+            
+            # Initialize project service
+            self.project_service = ProjectService(
+                self.db_manager, 
+                self.github_service, 
+                self.agent_manager
+            )
+            
+            logger.info("YMERA system startup completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Startup failed: {str(e)}")
+            raise
+    
+    async def shutdown(self):
+        """Cleanup all services"""
+        try:
+            logger.info("Shutting down YMERA system...")
+            
+            if self.agent_manager:
+                await self.agent_manager.shutdown()
+            
+            await self.vector_db_manager.shutdown()
+            await self.embedding_service.shutdown()
+            await self.llm_manager.shutdown()
+            await self.redis_manager.shutdown()
+            await self.db_manager.shutdown()
+            
+            logger.info("YMERA system shutdown completed")
+            
+        except Exception as e:
+            logger.error(f"Shutdown error: {str(e)}")
+
+# Production server setup
+def create_app() -> FastAPI:
+    """Factory function to create FastAPI application"""
+    app_instance = YMERAApplication()
+    
+    @app_instance.app.on_event("startup")
+    async def startup_event():
+        await app_instance.startup()
+    
+    @app_instance.app.on_event("shutdown")
+    async def shutdown_event():
+        await app_instance.shutdown()
+    
+    return app_instance.app
+
+# CLI interface for management tasks
+class YMERACLIManager:
+    def __init__(self, config_path: str = None):
+        self.config = ConfigManager(config_path)
+        self.db_manager = DatabaseManager(self.config.db)
+    
+    async def init_database(self):
+        """Initialize database tables"""
+        try:
+            logger.info("Initializing database...")
+            await self.db_manager.initialize()
+            logger.info("Database initialization completed")
+        except Exception as e:
+            logger.error(f"Database initialization failed: {str(e)}")
+            raise
+    
+    async def create_admin_user(self, username: str, email: str, password: str):
+        """Create admin user"""
+        try:
+            auth_manager = AuthManager(self.config.security)
+            
+            async with self.db_manager.get_session() as session:
+                from sqlalchemy import select
+                
+                # Check if user exists
+                result = await session.execute(
+                    select(User).where(User.username == username)
+                )
+                existing_user = result.scalar_one_or_none()
+                
+                if existing_user:
+                    logger.warning(f"User {username} already exists")
+                    return
+                
+                # Create admin user
+                admin_user = User(
+                    username=username,
+                    email=email,
+                    hashed_password=auth_manager.get_password_hash(password),
+                    is_admin=True
+                )
+                session.add(admin_user)
+                await session.commit()
+                
+                logger.info(f"Admin user created: {username}")
+                
+        except Exception as e:
+            logger.error(f"Failed to create admin user: {str(e)}")
+            raise
+    
+    async def health_check(self):
+        """Perform comprehensive health check"""
+        try:
+            logger.info("Performing health check...")
+            
+            # Check database
+            await self.db_manager.initialize()
+            async with self.db_manager.get_session() as session:
+                from sqlalchemy import text
+                await session.execute(text("SELECT 1"))
+            logger.info("✓ Database: OK")
+            
+            # Check Redis if configured
+            if self.config.redis.enabled:
+                redis_manager = RedisCacheManager(self.config.redis)
+                await redis_manager.initialize()
+                await redis_manager.redis.ping()
+                logger.info("✓ Redis: OK")
+            else:
+                logger.info("- Redis: Not configured")
+            
+            # Check LLM providers
+            llm_manager = MultiLLMManager(self.config.ai)
+            await llm_manager.initialize()
+            providers_status = await llm_manager.health_check()
+            for provider, status in providers_status.items():
+                logger.info(f"✓ LLM {provider}: {'OK' if status else 'FAILED'}")
+            
+            logger.info("Health check completed successfully")
+            
+        except Exception as e:
+            logger.error(f"Health check failed: {str(e)}")
+            raise
+    
+    async def export_analytics(self, output_file: str, days: int = 30):
+        """Export analytics data"""
+        try:
+            logger.info(f"Exporting analytics for last {days} days...")
+            
+            await self.db_manager.initialize()
+            
+            async with self.db_manager.get_session() as session:
+                from sqlalchemy import select, func, and_
+                
+                start_date = datetime.utcnow() - timedelta(days=days)
+                
+                # Export learning records
+                result = await session.execute(
+                    select(LearningRecord).where(
+                        LearningRecord.created_at >= start_date
+                    ).order_by(LearningRecord.created_at.desc())
+                )
+                records = result.scalars().all()
+                
+                analytics_data = []
+                for record in records:
+                    analytics_data.append({
+                        "id": record.id,
+                        "agent_id": record.agent_id,
+                        "interaction_type": record.interaction_type,
+                        "success": record.success,
+                        "execution_time": record.execution_time,
+                        "created_at": record.created_at.isoformat(),
+                        "input_data": record.input_data,
+                        "output_data": record.output_data
+                    })
+                
+                # Write to file
+                import json
+                with open(output_file, 'w') as f:
+                    json.dump({
+                        "export_date": datetime.utcnow().isoformat(),
+                        "period_days": days,
+                        "total_records": len(analytics_data),
+                        "records": analytics_data
+                    }, f, indent=2, default=str)
+                
+                logger.info(f"Analytics exported to {output_file} ({len(analytics_data)} records)")
+                
+        except Exception as e:
+            logger.error(f"Analytics export failed: {str(e)}")
+            raise
+
+# Production WSGI application
+app = create_app()
+
+if __name__ == "__main__":
+    import argparse
+    import uvicorn
+    
+    parser = argparse.ArgumentParser(description="YMERA Enterprise Multi-Agent System")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--port", type=int, default=8000, help="Port to bind to")
+    parser.add_argument("--workers", type=int, default=4, help="Number of worker processes")
+    parser.add_argument("--config", help="Configuration file path")
+    parser.add_argument("--init-db", action="store_true", help="Initialize database")
+    parser.add_argument("--create-admin", nargs=3, metavar=("USERNAME", "EMAIL", "PASSWORD"), 
+                       help="Create admin user")
+    parser.add_argument("--health-check", action="store_true", help="Perform health check")
+    parser.add_argument("--export-analytics", nargs=2, metavar=("OUTPUT_FILE", "DAYS"),
+                       help="Export analytics data")
+    
+    args = parser.parse_args()
+    
+    # CLI operations
+    if any([args.init_db, args.create_admin, args.health_check, args.export_analytics]):
+        cli_manager = YMERACLIManager(args.config)
+        
+        async def run_cli():
+            if args.init_db:
+                await cli_manager.init_database()
+            
+            if args.create_admin:
+                username, email, password = args.create_admin
+                await cli_manager.create_admin_user(username, email, password)
+            
+            if args.health_check:
+                await cli_manager.health_check()
+            
+            if args.export_analytics:
+                output_file, days_str = args.export_analytics
+                await cli_manager.export_analytics(output_file, int(days_str))
+        
+        asyncio.run(run_cli())
+    else:
+        # Run server
+        config = ConfigManager(args.config)
+        
+        uvicorn.run(
+            "main:app",
+            host=args.host,
+            port=args.port,
+            workers=args.workers if config.system.environment == Environment.PRODUCTION else 1,
+            reload=config.system.debug,
+            log_level="info" if not config.system.debug else "debug",
+            access_log=True,
+            loop="uvloop" if config.system.environment == Environment.PRODUCTION else "asyncio"
+        )
