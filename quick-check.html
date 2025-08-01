@@ -1,0 +1,135 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YMERA Quick Check</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0a0a0a;
+            color: white;
+        }
+        .check-item {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ccc;
+        }
+        .success { border-color: #4CAF50; background: rgba(76, 175, 80, 0.1); }
+        .error { border-color: #f44336; background: rgba(244, 67, 54, 0.1); }
+        .loading { border-color: #ff9800; background: rgba(255, 152, 0, 0.1); }
+        button {
+            background: #DAA520;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        .logo {
+            text-align: center;
+            font-size: 2em;
+            color: #DAA520;
+            margin-bottom: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="logo">⚡ YMERA Quick Check</div>
+    
+    <button onclick="runQuickCheck()">Run Quick Check</button>
+    <button onclick="runFullCheck()">Run Full Check</button>
+    
+    <div id="results"></div>
+
+    <script>
+        async function checkEndpoint(url, name) {
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                return {
+                    name: name,
+                    status: response.ok ? 'success' : 'error',
+                    message: response.ok ? `✅ ${name} is working` : `❌ ${name} failed`,
+                    details: data
+                };
+            } catch (error) {
+                return {
+                    name: name,
+                    status: 'error',
+                    message: `❌ ${name} connection failed`,
+                    details: error.message
+                };
+            }
+        }
+
+        async function runQuickCheck() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<div class="check-item loading">🔄 Running quick checks...</div>';
+            
+            const checks = [
+                checkEndpoint('/health', 'Backend Health'),
+                checkEndpoint('/api/projects', 'Projects API'),
+                checkEndpoint('/api/files', 'Files API')
+            ];
+            
+            const checkResults = await Promise.all(checks);
+            
+            results.innerHTML = checkResults.map(result => 
+                `<div class="check-item ${result.status}">
+                    ${result.message}
+                    <small style="display: block; margin-top: 5px; opacity: 0.8;">
+                        ${JSON.stringify(result.details, null, 2).substring(0, 100)}...
+                    </small>
+                </div>`
+            ).join('');
+        }
+
+        async function runFullCheck() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<div class="check-item loading">🔄 Running comprehensive checks...</div>';
+            
+            const checks = [
+                checkEndpoint('/health', 'Backend Health'),
+                checkEndpoint('/api/auth/login', 'Auth System'),
+                checkEndpoint('/api/projects', 'Projects API'),
+                checkEndpoint('/api/files', 'Files API'),
+                checkEndpoint('/api/agents', 'AI Agents'),
+                checkEndpoint('/api/analytics/dashboard', 'Analytics'),
+                checkEndpoint('/api/learning/status', 'Learning Engine')
+            ];
+            
+            const checkResults = await Promise.all(checks);
+            
+            const successCount = checkResults.filter(r => r.status === 'success').length;
+            const totalCount = checkResults.length;
+            
+            results.innerHTML = `
+                <div class="check-item ${successCount === totalCount ? 'success' : 'error'}">
+                    📊 Overall Status: ${successCount}/${totalCount} services working
+                </div>
+                ${checkResults.map(result => 
+                    `<div class="check-item ${result.status}">
+                        ${result.message}
+                        <details style="margin-top: 5px;">
+                            <summary>View Details</summary>
+                            <pre style="margin-top: 10px; font-size: 12px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 3px; overflow-x: auto;">
+${JSON.stringify(result.details, null, 2)}
+                            </pre>
+                        </details>
+                    </div>`
+                ).join('')}
+            `;
+        }
+
+        // Auto-run quick check on load
+        window.onload = () => runQuickCheck();
+    </script>
+</body>
+</html>
