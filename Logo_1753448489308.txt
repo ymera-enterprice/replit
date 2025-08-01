@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ymera Logo</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Great+Vibes:wght@400&display=swap');
+
+```
+    body {
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 25%, #2a1a1a 50%, #1a1a1a 75%, #0a0a0a 100%);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-family: 'Great Vibes', cursive;
+        overflow: hidden;
+    }
+
+    .logo-container {
+        position: relative;
+        cursor: pointer;
+        transform: scale(1.5);
+    }
+
+    .main-text {
+        font-size: 4rem;
+        font-weight: 400;
+        background: linear-gradient(45deg, #FBBF24 0%, #2563EB 50%, #991B1B 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        position: relative;
+        z-index: 2;
+        text-shadow: 0 0 30px rgba(251, 191, 36, 0.3);
+    }
+
+    .subtitle {
+        font-size: 0.9rem;
+        position: absolute;
+        bottom: -20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(45deg, #FBBF24 0%, #2563EB 50%, #991B1B 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        opacity: 0;
+        z-index: 1;
+        text-align: center;
+        white-space: nowrap;
+    }
+
+    .infinity-symbol {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 280px;
+        height: 120px;
+        z-index: 0;
+    }
+
+    .infinity-path {
+        stroke: url(#infinityGradient);
+        stroke-width: 3;
+        fill: none;
+        stroke-dasharray: 1000;
+        stroke-dashoffset: 1000;
+        filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.5));
+    }
+
+    .glow-effect {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 300px;
+        height: 140px;
+        background: radial-gradient(ellipse, rgba(251, 191, 36, 0.1) 0%, rgba(37, 99, 235, 0.1) 50%, rgba(153, 27, 27, 0.1) 100%);
+        border-radius: 50%;
+        opacity: 0;
+        z-index: -1;
+    }
+
+    /* Animation classes */
+    .animate-draw {
+        animation: drawInfinity 4s ease-in-out forwards;
+    }
+
+    .animate-neon-pulse {
+        animation: neonPulse 8s ease-in-out forwards;
+    }
+
+    .animate-fade {
+        animation: fadeToSubtle 2s ease-in-out forwards;
+    }
+
+    .show-subtitle {
+        animation: showSubtitle 2s ease-in-out forwards;
+    }
+
+    .glow-pulse {
+        animation: glowPulse 8s ease-in-out forwards;
+    }
+
+    @keyframes drawInfinity {
+        to {
+            stroke-dashoffset: 0;
+        }
+    }
+
+    @keyframes neonPulse {
+        0%, 20% {
+            filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.7));
+        }
+        25% {
+            filter: drop-shadow(0 0 50px rgba(251, 191, 36, 1)) 
+                    drop-shadow(0 0 40px rgba(37, 99, 235, 0.8)) 
+                    drop-shadow(0 0 45px rgba(153, 27, 27, 0.6));
+        }
+        30% {
+            filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.7));
+        }
+        35% {
+            filter: drop-shadow(0 0 55px rgba(251, 191, 36, 1)) 
+                    drop-shadow(0 0 45px rgba(37, 99, 235, 0.8)) 
+                    drop-shadow(0 0 50px rgba(153, 27, 27, 0.6));
+        }
+        40% {
+            filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.7));
+        }
+        45% {
+            filter: drop-shadow(0 0 60px rgba(251, 191, 36, 1)) 
+                    drop-shadow(0 0 50px rgba(37, 99, 235, 0.8)) 
+                    drop-shadow(0 0 55px rgba(153, 27, 27, 0.6));
+        }
+        50% {
+            filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.7));
+        }
+        55% {
+            filter: drop-shadow(0 0 55px rgba(251, 191, 36, 1)) 
+                    drop-shadow(0 0 45px rgba(37, 99, 235, 0.8)) 
+                    drop-shadow(0 0 50px rgba(153, 27, 27, 0.6));
+        }
+        60% {
+            filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.7));
+        }
+        65% {
+            filter: drop-shadow(0 0 50px rgba(251, 191, 36, 1)) 
+                    drop-shadow(0 0 40px rgba(37, 99, 235, 0.8)) 
+                    drop-shadow(0 0 45px rgba(153, 27, 27, 0.6));
+        }
+        70%, 100% {
+            filter: drop-shadow(0 0 20px rgba(251, 191, 36, 0.7));
+        }
+    }
+
+    @keyframes fadeToSubtle {
+        to {
+            opacity: 0.4;
+            filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.3));
+        }
+    }
+
+    @keyframes showSubtitle {
+        to {
+            opacity: 0.8;
+        }
+    }
+
+    @keyframes glowPulse {
+        0%, 20% {
+            opacity: 0.1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        25% {
+            opacity: 0.5;
+            transform: translate(-50%, -50%) scale(1.3);
+        }
+        30% {
+            opacity: 0.1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        35% {
+            opacity: 0.6;
+            transform: translate(-50%, -50%) scale(1.4);
+        }
+        40% {
+            opacity: 0.1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        45% {
+            opacity: 0.7;
+            transform: translate(-50%, -50%) scale(1.5);
+        }
+        50% {
+            opacity: 0.1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        55% {
+            opacity: 0.6;
+            transform: translate(-50%, -50%) scale(1.4);
+        }
+        60% {
+            opacity: 0.1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        65% {
+            opacity: 0.5;
+            transform: translate(-50%, -50%) scale(1.3);
+        }
+        70%, 100% {
+            opacity: 0.15;
+            transform: translate(-50%, -50%) scale(1);
+        }
+    }
+
+    /* Hover effects */
+    .logo-container:hover .main-text {
+        text-shadow: 0 0 40px rgba(251, 191, 36, 0.5);
+        transition: text-shadow 0.3s ease;
+    }
+
+    .logo-container:hover .infinity-path {
+        filter: drop-shadow(0 0 20px rgba(251, 191, 36, 0.7));
+        transition: filter 0.3s ease;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .logo-container {
+            transform: scale(1);
+        }
+        
+        .main-text {
+            font-size: 3rem;
+        }
+        
+        .infinity-symbol {
+            width: 220px;
+            height: 100px;
+        }
+    }
+</style>
+```
+
+</head>
+<body>
+    <div class="logo-container" onclick="playAnimation()">
+        <div class="main-text">Ymera</div>
+        <div class="subtitle">by Mohamed Mansour</div>
+        <div class="glow-effect"></div>
+        <svg class="infinity-symbol" viewBox="0 0 280 120">
+            <defs>
+                <linearGradient id="infinityGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:#FBBF24;stop-opacity:1" />
+                    <stop offset="50%" style="stop-color:#2563EB;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:#991B1B;stop-opacity:1" />
+                </linearGradient>
+            </defs>
+            <path class="infinity-path" d="M 40 60 C 40 20, 100 20, 140 60 C 140 100, 100 100, 140 60 C 140 20, 200 20, 240 60 C 240 100, 180 100, 140 60" />
+        </svg>
+    </div>
+
+```
+<script>
+    let isAnimating = false;
+
+    function playAnimation() {
+        if (isAnimating) return;
+        isAnimating = true;
+
+        // Reset all elements
+        const infinityPath = document.querySelector('.infinity-path');
+        const subtitle = document.querySelector('.subtitle');
+        const glowEffect = document.querySelector('.glow-effect');
+        
+        // Clear all animation classes
+        infinityPath.classList.remove('animate-draw', 'animate-neon-pulse', 'animate-fade');
+        subtitle.classList.remove('show-subtitle');
+        glowEffect.classList.remove('glow-pulse');
+
+        // Reset styles
+        infinityPath.style.strokeDashoffset = '1000';
+        infinityPath.style.opacity = '1';
+        subtitle.style.opacity = '0';
+        glowEffect.style.opacity = '0';
+
+        // Step 1: Draw infinity symbol (4 seconds)
+        setTimeout(() => {
+            infinityPath.classList.add('animate-draw');
+        }, 100);
+
+        // Step 2: Show subtitle early (at 3 seconds)
+        setTimeout(() => {
+            subtitle.classList.add('show-subtitle');
+        }, 3000);
+
+        // Step 3: Symbol stays visible for 4 more seconds (4-8 seconds)
+        // Then neon pulse effect with 5 pulses (8 seconds) - starts at 8 seconds
+        setTimeout(() => {
+            infinityPath.classList.add('animate-neon-pulse');
+            glowEffect.classList.add('glow-pulse');
+        }, 8000);
+
+        // Step 4: Fade to subtle after pulsing (starts at 16 seconds)
+        setTimeout(() => {
+            infinityPath.classList.add('animate-fade');
+        }, 16000);
+
+        // Reset animation flag after complete cycle (20 seconds total)
+        setTimeout(() => {
+            isAnimating = false;
+        }, 20000);
+    }
+
+    // Auto-play animation on page load (startup)
+    window.addEventListener('load', () => {
+        setTimeout(() => {
+            playAnimation();
+        }, 500);
+    });
+
+    // Add some particle effects for extra luxury
+    function createParticles() {
+        const particles = [];
+        for (let i = 0; i < 20; i++) {
+            const particle = document.createElement('div');
+            particle.style.position = 'fixed';
+            particle.style.width = '2px';
+            particle.style.height = '2px';
+            particle.style.background = 'rgba(251, 191, 36, 0.3)';
+            particle.style.borderRadius = '50%';
+            particle.style.pointerEvents = 'none';
+            particle.style.zIndex = '-1';
+            document.body.appendChild(particle);
+            particles.push(particle);
+        }
+
+        function animateParticles() {
+            particles.forEach((particle, index) => {
+                const x = Math.sin(Date.now() * 0.001 + index) * 200 + window.innerWidth / 2;
+                const y = Math.cos(Date.now() * 0.001 + index) * 100 + window.innerHeight / 2;
+                particle.style.left = x + 'px';
+                particle.style.top = y + 'px';
+                particle.style.opacity = Math.sin(Date.now() * 0.002 + index) * 0.5 + 0.5;
+            });
+            requestAnimationFrame(animateParticles);
+        }
+        animateParticles();
+    }
+
+    // Add particles for extra luxury feel
+    createParticles();
+</script>
+```
+
+</body>
+</html>
