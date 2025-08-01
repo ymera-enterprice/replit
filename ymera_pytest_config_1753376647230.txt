@@ -1,0 +1,388 @@
+# ===============================================================================
+# YMERA Enterprise - Testing Configuration
+# Production-Ready pytest.ini Configuration - v4.0
+# Enterprise-grade testing setup with comprehensive coverage and monitoring
+# ===============================================================================
+
+[tool:pytest]
+
+# ===============================================================================
+# CORE PYTEST CONFIGURATION
+# ===============================================================================
+
+# Test discovery patterns
+testpaths = 
+    tests
+    src/tests
+    integration_tests
+    performance_tests
+
+# Python file patterns for test discovery
+python_files = 
+    test_*.py
+    *_test.py
+    tests.py
+
+# Python class patterns for test discovery
+python_classes = 
+    Test*
+    *Tests
+    *TestCase
+
+# Python function patterns for test discovery
+python_functions = 
+    test_*
+
+# Minimum Python version for tests
+minversion = 6.0
+
+# Required plugins for YMERA testing infrastructure
+required_plugins =
+    pytest-asyncio>=0.21.0
+    pytest-cov>=4.0.0
+    pytest-mock>=3.10.0
+    pytest-xdist>=3.2.0
+    pytest-html>=3.1.0
+    pytest-json-report>=1.5.0
+    pytest-benchmark>=4.0.0
+    pytest-timeout>=2.1.0
+    pytest-redis>=3.0.0
+    pytest-postgresql>=4.1.0
+    pytest-env>=0.8.1
+    pytest-freezer>=0.4.8
+
+# ===============================================================================
+# ASYNC TESTING CONFIGURATION
+# ===============================================================================
+
+# Asyncio configuration for agent testing
+asyncio_mode = auto
+asyncio_default_fixture_loop_scope = function
+
+# ===============================================================================
+# CODE COVERAGE CONFIGURATION
+# ===============================================================================
+
+# Coverage collection settings
+addopts = 
+    --strict-markers
+    --strict-config
+    --verbose
+    --tb=short
+    --cov=src
+    --cov=agents
+    --cov=learning_engine
+    --cov=monitoring
+    --cov=database
+    --cov=api
+    --cov-report=html:htmlcov
+    --cov-report=xml:coverage.xml
+    --cov-report=term-missing:skip-covered
+    --cov-report=json:coverage.json
+    --cov-fail-under=90
+    --cov-branch
+    --cov-context=test
+    --no-cov-on-fail
+    --html=reports/pytest_report.html
+    --self-contained-html
+    --json-report
+    --json-report-file=reports/pytest_report.json
+    --maxfail=5
+    --disable-warnings
+    --timeout=300
+    --timeout-method=thread
+
+# Coverage exclusions for enterprise patterns
+cov_exclude_lines =
+    pragma: no cover
+    def __repr__
+    if self.debug:
+    if settings.DEBUG
+    raise AssertionError
+    raise NotImplementedError
+    if 0:
+    if __name__ == .__main__.:
+    class .*\bProtocol\):
+    @(abc\.)?abstractmethod
+
+# Paths to exclude from coverage
+cov_omit =
+    */venv/*
+    */virtualenv/*
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */migrations/*
+    */static/*
+    */media/*
+    */locale/*
+    setup.py
+    manage.py
+    */settings/local.py
+    */conftest.py
+
+# ===============================================================================
+# PARALLEL TESTING CONFIGURATION
+# ===============================================================================
+
+# Distributed testing with xdist
+dist = worksteal
+numprocesses = auto
+
+# ===============================================================================
+# TEST MARKERS CONFIGURATION
+# ===============================================================================
+
+markers =
+    # Performance and load testing
+    slow: marks tests as slow (deselect with '-m "not slow"')
+    performance: marks tests as performance benchmarks
+    benchmark: marks tests for benchmarking
+    load_test: marks tests as load testing
+    stress_test: marks tests as stress testing
+    
+    # Integration and system testing
+    integration: marks tests as integration tests
+    unit: marks tests as unit tests
+    functional: marks tests as functional tests
+    system: marks tests as system-wide tests
+    e2e: marks tests as end-to-end tests
+    
+    # Agent-specific testing
+    agent_test: marks tests as agent-specific tests
+    learning_test: marks tests for learning engine functionality
+    knowledge_test: marks tests for knowledge management
+    collaboration_test: marks tests for inter-agent collaboration
+    pattern_test: marks tests for pattern recognition
+    
+    # Database and storage testing
+    database: marks tests that require database connection
+    redis: marks tests that require Redis connection
+    postgresql: marks tests that require PostgreSQL
+    memory_test: marks tests for memory management
+    cache_test: marks tests for caching functionality
+    
+    # Security and authentication testing
+    security: marks tests as security-related
+    auth: marks tests for authentication functionality
+    permissions: marks tests for permission system
+    encryption: marks tests for encryption functionality
+    
+    # API and network testing
+    api: marks tests as API endpoint tests
+    network: marks tests requiring network access
+    external: marks tests that call external services
+    mock_external: marks tests that mock external services
+    
+    # Monitoring and observability testing
+    monitoring: marks tests for monitoring functionality
+    metrics: marks tests for metrics collection
+    logging: marks tests for logging functionality
+    health_check: marks tests for health check endpoints
+    
+    # Configuration and environment testing
+    config: marks tests for configuration management
+    env_test: marks tests requiring specific environment
+    docker: marks tests requiring Docker environment
+    kubernetes: marks tests for Kubernetes deployment
+    
+    # Error handling and recovery testing
+    error_handling: marks tests for error handling
+    recovery: marks tests for system recovery
+    failover: marks tests for failover scenarios
+    timeout: marks tests with timeout scenarios
+    
+    # Data processing and validation testing
+    data_processing: marks tests for data processing
+    validation: marks tests for data validation
+    transformation: marks tests for data transformation
+    serialization: marks tests for data serialization
+    
+    # Workflow and orchestration testing
+    workflow: marks tests for workflow functionality
+    orchestration: marks tests for orchestration
+    scheduling: marks tests for task scheduling
+    background_task: marks tests for background tasks
+
+# ===============================================================================
+# LOGGING CONFIGURATION
+# ===============================================================================
+
+# Logging level during tests
+log_level = INFO
+
+# Capture logging output
+log_capture = true
+
+# Log format for test output
+log_format = %(asctime)s [%(levelname)8s] %(name)s: %(message)s (%(filename)s:%(lineno)d)
+log_date_format = %Y-%m-%d %H:%M:%S
+
+# Live logging configuration
+log_cli = true
+log_cli_level = INFO
+log_cli_format = %(asctime)s [%(levelname)8s] %(name)s: %(message)s (%(filename)s:%(lineno)d)
+log_cli_date_format = %Y-%m-%d %H:%M:%S
+
+# ===============================================================================
+# ENVIRONMENT VARIABLES FOR TESTING
+# ===============================================================================
+
+env =
+    # Testing environment
+    ENVIRONMENT = testing
+    TESTING = true
+    DEBUG = false
+    
+    # Database configuration
+    DATABASE_URL = postgresql+asyncpg://test_user:test_password@localhost:5432/ymera_test
+    TEST_DATABASE_URL = postgresql+asyncpg://test_user:test_password@localhost:5432/ymera_test
+    DATABASE_POOL_SIZE = 5
+    DATABASE_MAX_OVERFLOW = 10
+    
+    # Redis configuration
+    REDIS_URL = redis://localhost:6379/1
+    REDIS_CACHE_URL = redis://localhost:6379/2
+    REDIS_SESSION_URL = redis://localhost:6379/3
+    
+    # Security configuration
+    SECRET_KEY = test-secret-key-for-testing-only-not-for-production
+    JWT_SECRET_KEY = test-jwt-secret-key-for-testing-only
+    ENCRYPTION_KEY = test-encryption-key-for-testing-only
+    
+    # API configuration
+    API_V1_PREFIX = /api/v1
+    API_RATE_LIMIT = 1000
+    API_TIMEOUT = 30
+    
+    # Agent configuration
+    AGENT_MAX_INSTANCES = 10
+    AGENT_HEARTBEAT_INTERVAL = 30
+    AGENT_LEARNING_INTERVAL = 60
+    
+    # Learning engine configuration
+    LEARNING_ENGINE_ENABLED = true
+    KNOWLEDGE_SYNC_INTERVAL = 300
+    PATTERN_ANALYSIS_INTERVAL = 900
+    MEMORY_CONSOLIDATION_INTERVAL = 3600
+    
+    # Monitoring configuration
+    MONITORING_ENABLED = true
+    METRICS_ENABLED = true
+    HEALTH_CHECK_TIMEOUT = 10
+    
+    # File storage configuration
+    UPLOAD_DIR = /tmp/ymera_test_uploads
+    MAX_UPLOAD_SIZE = 104857600
+    
+    # External service configuration (mocked in tests)
+    EXTERNAL_API_BASE_URL = http://localhost:8080/mock
+    EXTERNAL_API_KEY = test-api-key
+    EXTERNAL_API_TIMEOUT = 10
+    
+    # Logging configuration
+    LOG_LEVEL = DEBUG
+    LOG_FORMAT = structured
+    LOG_FILE = /tmp/ymera_test.log
+
+# ===============================================================================
+# TIMEOUT CONFIGURATION
+# ===============================================================================
+
+# Global timeout for tests
+timeout = 300
+
+# Timeout method
+timeout_func_only = true
+
+# ===============================================================================
+# WARNING FILTERS
+# ===============================================================================
+
+filterwarnings =
+    ignore::UserWarning
+    ignore::DeprecationWarning
+    ignore::PendingDeprecationWarning
+    ignore::ResourceWarning
+    ignore:.*distutils.*:Warning
+    ignore:.*imp module.*:DeprecationWarning
+    ignore:.*pkg_resources.*:DeprecationWarning
+    ignore:.*collections.abc.*:DeprecationWarning
+    error::sqlalchemy.exc.SAWarning
+    error::UserWarning:ymera.*
+
+# ===============================================================================
+# COLLECTION CONFIGURATION
+# ===============================================================================
+
+# Don't collect certain files
+collect_ignore = [
+    "setup.py",
+    "conftest.py",
+    "build",
+    "dist",
+    ".tox",
+    ".pytest_cache",
+    "node_modules",
+    ".git"
+]
+
+# Don't collect __pycache__ directories
+norecursedirs = 
+    .git
+    .tox
+    dist
+    build
+    *.egg
+    __pycache__
+    .pytest_cache
+    node_modules
+    .venv
+    venv
+    htmlcov
+
+# ===============================================================================
+# CACHE CONFIGURATION
+# ===============================================================================
+
+# Cache directory
+cache_dir = .pytest_cache
+
+# ===============================================================================
+# JSON REPORT CONFIGURATION
+# ===============================================================================
+
+jsonapi = true
+
+# ===============================================================================
+# HTML REPORT CONFIGURATION
+# ===============================================================================
+
+# HTML report title
+html_report_title = YMERA Enterprise Test Report
+
+# ===============================================================================
+# BENCHMARK CONFIGURATION
+# ===============================================================================
+
+# Benchmark configuration
+benchmark_only = false
+benchmark_sort = mean
+benchmark_group_by = group
+benchmark_warmup = true
+benchmark_warmup_iterations = 3
+benchmark_disable_gc = true
+benchmark_min_rounds = 5
+benchmark_max_time = 1.0
+benchmark_min_time = 0.000005
+
+# ===============================================================================
+# CUSTOM CONFIGURATION FOR YMERA ENTERPRISE
+# ===============================================================================
+
+# Custom YMERA testing options
+ymera_test_mode = enterprise
+ymera_mock_external_services = true
+ymera_enable_performance_tracking = true
+ymera_collect_learning_metrics = true
+ymera_validate_security_patterns = true
