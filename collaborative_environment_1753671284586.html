@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ymera Collaborative Environment</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Luxurious+Script&family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .logo {
+            font-family: 'Luxurious Script', cursive;
+            font-size: 2.5rem;
+            color: #FFD700;
+            text-align: center;
+            margin-bottom: 30px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .workspace {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr 350px;
+            gap: 20px;
+            height: calc(100vh - 150px);
+        }
+
+        .code-panel {
+            display: grid;
+            grid-template-rows: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .code-block {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .code-content {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #e6e6e6;
+        }
+
+        .code-line {
+            display: flex;
+            margin-bottom: 8px;
+        }
+
+        .line-number {
+            color: #666;
+            margin-right: 20px;
+            min-width: 20px;
+            text-align: right;
+        }
+
+        .keyword {
+            color: #569cd6;
+        }
+
+        .string {
+            color: #ce9178;
+        }
+
+        .function-name {
+            color: #dcdcaa;
+        }
+
+        .comment {
+            color: #6a9955;
+        }
+
+        .variable {
+            color: #9cdcfe;
+        }
+
+        .user-avatar {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #FFD700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .avatar-alex {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+        }
+
+        .avatar-enime {
+            background: linear-gradient(135deg, #f093fb, #f5576c);
+        }
+
+        .avatar-thomas {
+            background: linear-gradient(135deg, #4facfe, #00f2fe);
+        }
+
+        .chat-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .chat-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .chat-status {
+            display: flex;
+            gap: 5px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #32cd32;
+        }
+
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .message {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .message-avatar {
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+
+        .message-content {
+            flex: 1;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+
+        .message-author {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .message-time {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .message-text {
+            font-size: 14px;
+            line-height: 1.4;
+            color: #ccc;
+        }
+
+        .chat-input {
+            padding: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .message-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 25px;
+            padding: 12px 20px;
+            color: white;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .message-input::placeholder {
+            color: #888;
+        }
+
+        .send-button {
+            background: #FFD700;
+            border: none;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #000;
+            font-weight: 600;
+        }
+
+        .collaboration-indicator {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 5px;
+        }
+
+        .indicator-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #32cd32;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        @media (max-width: 1200px) {
+            .workspace {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="logo">Ymera</div>
+    
+    <div class="workspace">
+        <div class="code-panel">
+            <div class="code-block">
+                <div class="collaboration-indicator">
+                    <div class="indicator-dot"></div>
+                    <div class="indicator-dot" style="animation-delay: 0.5s;"></div>
+                </div>
+                <div class="code-content">
+                    <div class="code-line">
+                        <span class="line-number">3</span>
+                        <span><span class="keyword">function</span> <span class="function-name">greet</span>(<span class="variable">name</span>) {</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">4</span>
+                        <span>&nbsp;&nbsp;<span class="keyword">if</span> (<span class="variable">name</span>, <span class="variable">name</span>:</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">5</span>
+                        <span>&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">return</span> <span class="string">"hello"</span>, <span class="string">green"</span>;</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">6</span>
+                        <span>&nbsp;&nbsp;}</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">7</span>
+                        <span>} <span class="keyword">return</span></span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">8</span>
+                        <span>}</span>
+                    </div>
+                </div>
+                <div class="user-avatar avatar-alex">A</div>
+            </div>
+            
+            <div class="code-block">
+                <div class="collaboration-indicator">
+                    <div class="indicator-dot" style="animation-delay: 1s;"></div>
+                </div>
+                <div class="code-content">
+                    <div class="code-line">
+                        <span class="line-number">1</span>
+                        <span><span class="keyword">const</span> <span class="variable">multiply</span>(<span class="variable">a</span>, <span class="variable">b</span>) {</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">2</span>
+                        <span>&nbsp;&nbsp;<span class="keyword">const</span> <span class="variable">a</span> = <span class="variable">b</span>;</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">3</span>
+                        <span>&nbsp;&nbsp;}</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">4</span>
+                        <span></span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">5</span>
+                        <span>&nbsp;&nbsp;<span class="keyword">return</span> <span class="variable">a</span> + <span class="variable">b</span></span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">6</span>
+                        <span>&nbsp;&nbsp;}</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">7</span>
+                        <span>}</span>
+                    </div>
+                </div>
+                <div class="user-avatar avatar-enime">E</div>
+            </div>
+        </div>
+        
+        <div class="code-panel">
+            <div class="code-block">
+                <div class="code-content">
+                    <div class="code-line">
+                        <span class="line-number">1</span>
+                        <span><span class="keyword">const</span> <span class="variable">numbers</span> +</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">2</span>
+                        <span><span class="variable">numbers</span>.<span class="function-name">map</span>(<span class="variable">n</span> +</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">3</span>
+                        <span>&nbsp;&nbsp;(<span class="variable">n</span><span class="string">"}</span> =<span class="variable">6</span> )</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">4</span>
+                        <span>};</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">5</span>
+                        <span><span class="keyword">return</span> <span class="variable">8</span>;</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">6</span>
+                        <span></span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">7</span>
+                        <span><span class="keyword">return</span> <span class="variable">dl</span>-<span class="variable">b</span></span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="code-block">
+                <div class="code-content">
+                    <div class="code-line">
+                        <span class="line-number">1</span>
+                        <span><span class="keyword">async</span> <span class="keyword">function</span> <span class="function-name">fetchData</span>()</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">2</span>
+                        <span><span class="variable">putchacks</span>:) +</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">3</span>
+                        <span>&nbsp;&nbsp;<span class="variable">await</span>: <span class="variable">await</span></span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">4</span>
+                        <span>&nbsp;&nbsp;<span class="keyword">return</span></span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">5</span>
+                        <span>};</span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">6</span>
+                        <span></span>
+                    </div>
+                    <div class="code-line">
+                        <span class="line-number">7</span>
+                        <span></span>
+                    </div>
+                </div>
+                <div class="user-avatar avatar-thomas">T</div>
+            </div>
+        </div>
+        
+        <div class="chat-panel">
+            <div class="chat-header">
+                <span class="chat-title">💬 Chat</span>
+                <div class="chat-status">
+                    <div class="status-dot"></div>
+                    <div class="status-dot"></div>
+                </div>
+            </div>
+            
+            <div class="chat-messages">
+                <div class="message">
+                    <div class="message-avatar avatar-alex">A</div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="message-author">Alex</span>
+                            <span class="message-time">16:15</span>
+                        </div>
+                        <div class="message-text">Working on the authentication module...</div>
+                    </div>
+                </div>
+                
+                <div class="message">
+                    <div class="message-avatar avatar-enime">S</div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="message-author">Sunth</span>
+                            <span class="message-time">19:17</span>
+                        </div>
+                        <div class="message-text">Performance looks good.</div>
+                    </div>
+                </div>
+                
+                <div class="message">
+                    <div class="message-avatar avatar-thomas">T</div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="message-author">Thomas</span>
+                            <span class="message-time">10:17</span>
+                        </div>
+                        <div class="message-text">Need more code.</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="chat-input">
+                <div class="input-container">
+                    <input type="text" class="message-input" placeholder="Write a message...">
+                    <button class="send-button">→</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simulate real-time collaboration
+        const indicators = document.querySelectorAll('.indicator-dot');
+        indicators.forEach((dot, index) => {
+            setInterval(() => {
+                dot.style.opacity = Math.random() > 0.5 ? '1' : '0.3';
+            }, 1000 + index * 200);
+        });
+
+        // Chat functionality
+        const messageInput = document.querySelector('.message-input');
+        const sendButton = document.querySelector('.send-button');
+        const messagesContainer = document.querySelector('.chat-messages');
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (text) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'message';
+                messageDiv.innerHTML = `
+                    <div class="message-avatar" style="background: linear-gradient(135deg, #ff6b6b, #ffa500);">U</div>
+                    <div class="message-content">
+                        <div class="message-header">
+                            <span class="message-author">You</span>
+                            <span class="message-time">${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                        <div class="message-text">${text}</div>
+                    </div>
+                `;
+                messagesContainer.appendChild(messageDiv);
+                messageInput.value = '';
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+        }
+
+        sendButton.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
+
